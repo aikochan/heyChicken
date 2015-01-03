@@ -72,7 +72,7 @@ boolean getTemp(int sensor, float *result)
 	{
 		ds.reset();
 		ds.select(addr[sensor]);
-		ds.write(0x44,1);	// start conversion, with parasite power on at the end
+		ds.write(0x44,1);	// start conversion
 	
 		//delay(1000);		// uncomment for parasitic power
 	
@@ -80,7 +80,7 @@ boolean getTemp(int sensor, float *result)
 		ds.select(addr[sensor]);		
 		ds.write(0xBE);		// Read Scratchpad
 	
-		for ( int i = 0; i < 9; i++) 
+		for (int i = 0; i < 9; i++) 
 		{						
 			// we need 9 bytes
 			data[i] = ds.read();
