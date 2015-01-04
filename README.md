@@ -6,7 +6,7 @@ heyChicken is a chicken coop automation project that monitors temperature, wheth
 Hardware Used
   - Arduino (Uno)
   - WiFi shield
-  - DS18N20 One-wire temperature sensor(s) (https://www.sparkfun.com/products/11050)
+  - DS18B20 One-wire temperature sensor(s) (https://www.sparkfun.com/products/11050)
   - Flexiforce Pressure sensor (https://www.sparkfun.com/products/8685)
 
 
