@@ -47,7 +47,7 @@ boolean findDS18S20Devices(void)
     return success;
 }
 
-void loop(void) 
+void doTemperatureStuff(void)
 {
     if (!foundAllDevices)
     {
@@ -70,7 +70,6 @@ void loop(void)
         }
         delay(1000);
     }
-
 }
 
 // obtains the temperature from one DS18S20 in DEG Celsius as result
@@ -114,3 +113,9 @@ boolean getTemp(int sensor, float *result)
     }
     return success;
 }
+
+void loop(void) 
+{
+    doTemperatureStuff();
+}
+
