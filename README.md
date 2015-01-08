@@ -1,7 +1,7 @@
 heyChicken
 ==========
 
-heyChicken is a chicken coop automation project that monitors temperature, whether the chickens are all on the roost bar and automate closing the door to the nest box.
+The Hey Chicken! project seeks to solve the age old problem of ensuring your backyard flock is safe and cozy, even when you are away from home. Our design uses an Arduino Uno, Wifi Shield, and various sensors to detect the state of the coop like temperature, light, and whether the chickens are roosting to ultimately determine what the door and heater should be doing at that moment. A server on the local network functions as the “brains” of the operation and wirelessly runs the automation based on the coop conditions the Arduino is reporting. Of course, this project would not be complete without a remote control panel iOS app that can be used to control the chicken door and heater, or just to spy on your flock via a coop webcam.  For more details, see: http://squishylab.com/2015/01/07/hey-chicken-coop-automation-project/
 
 Hardware Used
   - Arduino (Uno)
