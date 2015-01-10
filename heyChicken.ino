@@ -1,23 +1,34 @@
+#include <WiFi.h>
+#include <WiFiUdp.h>
+#include "WiFiInfo.h"
+#include <SPI.h>
 #include <OneWire.h> 
 
+// wifi
+char ssid[] = WIFI_NETWORK;    // network SSID (name) 
+char pwd[] = WIFI_PASSWORD;    // network password
+
+int status = WL_IDLE_STATUS;
+unsigned int udpPort = 9999;          // local port to listen for UDP packets
+IPAddress serverAddress(SERVER_IPV4_BYTE0, SERVER_IPV4_BYTE1, SERVER_IPV4_BYTE2, SERVER_IPV4_BYTE3);
+const int UDP_PACKET_SIZE = 48; 
+byte packetBuffer[ UDP_PACKET_SIZE];    //buffer to hold incoming and outgoing packets
+WiFiUDP Udp;
+
+// temp 
 #define MAX_DS1820_SENSORS  2
 #define DS18S20_Pin         2 
 
 boolean foundAllDevices = false;
 byte addr[MAX_DS1820_SENSORS][8];
 
-OneWire ds(DS18S20_Pin);    // on digital pin 2
+OneWire ds(DS18S20_Pin);    // temp sensors on digital pin 2
 
-void errorMessage(char *msg)
-{
-  
-}
+///////////    temperature sensors    ///////////
 
-void setup(void) 
-{
-    Serial.begin(9600);  
-}
-
+// Looks for devices and checks the address array CRC, as well as the device type
+// If the device address info is obtained and the CRC and device type are ok for all devices, returns true
+// Otherwise, returns false and resets the search for a subsequent retry
 boolean findDS18S20Devices(void)
 {
     boolean success = true;
@@ -45,31 +56,6 @@ boolean findDS18S20Devices(void)
         }
     }
     return success;
-}
-
-void doTemperatureStuff(void)
-{
-    if (!foundAllDevices)
-    {
-        if (!(foundAllDevices = findDS18S20Devices())) return;
-    } 
-    
-    float temp;
-    for (int sensor = 0; sensor < MAX_DS1820_SENSORS; sensor++)
-    {
-        temp = 0;
-        if (getTemp(sensor, &temp)) 
-        {
-            Serial.print("Temp Sensor ");
-            Serial.print(sensor);
-            Serial.print(": ");
-            Serial.println(temp);
-        } else {
-            Serial.print("Failed to get reading for Temp Sensor ");
-            Serial.println(sensor);
-        }
-        delay(1000);
-    }
 }
 
 // obtains the temperature from one DS18S20 in DEG Celsius as result
@@ -114,8 +100,112 @@ boolean getTemp(int sensor, float *result)
     return success;
 }
 
+void doTemperatureStuff(void)
+{
+    if (!foundAllDevices)
+    {
+        if (!(foundAllDevices = findDS18S20Devices())) return;
+    } 
+    
+    float temp;
+    for (int sensor = 0; sensor < MAX_DS1820_SENSORS; sensor++)
+    {
+        temp = 0;
+        if (getTemp(sensor, &temp)) 
+        {
+            Serial.print("Temp Sensor ");
+            Serial.print(sensor);
+            Serial.print(": ");
+            Serial.println(temp);
+        } else {
+            Serial.print("Failed to get reading for Temp Sensor ");
+            Serial.println(sensor);
+        }
+        delay(1000);
+    }
+}
+
+///////////    wifi    ///////////
+
+void wifiSetup(void)
+{
+    if (WiFi.status() == WL_NO_SHIELD)
+    {
+        Serial.println("WiFi shield not present"); 
+        while(true);  // don't continue if the shield is not there
+    } 
+  
+    while ( status != WL_CONNECTED) 
+    { 
+        Serial.print("Attempting to connect to SSID: ");
+        Serial.println(ssid);
+        status = WiFi.begin(ssid, pwd);
+        delay(10000);    // wait 10 seconds for connection
+    } 
+    printWifiStatus();
+    
+    Serial.println("\nStarting connection to UDP server...");
+    Udp.begin(udpPort);
+}
+
+void printWifiStatus() 
+{
+    // print the SSID of the network you're attached to
+    Serial.print("SSID: ");
+    Serial.println(WiFi.SSID());
+  
+    // print your WiFi shield's IP address
+    IPAddress ip = WiFi.localIP();
+    Serial.print("IP Address: ");
+    Serial.println(ip);
+  
+    // print the received signal strength
+    long rssi = WiFi.RSSI();
+    Serial.print("signal strength (RSSI):");
+    Serial.print(rssi);
+    Serial.println(" dBm");
+}
+
+void handleUDP(void)
+{
+    // send packet if needed
+    memset(packetBuffer, 0, UDP_PACKET_SIZE);  // clear packet data
+    sprintf((char *)packetBuffer, "temp1: 23 temp2: 24");
+    Udp.beginPacket(serverAddress, udpPort);
+    Udp.write(packetBuffer, UDP_PACKET_SIZE);
+    Udp.endPacket();
+    delay(1000);
+    
+    // read packet if present
+    if ( Udp.parsePacket() ) 
+    {
+         
+        Serial.println("packet received");
+        Udp.read(packetBuffer, UDP_PACKET_SIZE); // read the packet into the buffer
+        Serial.println((char *)packetBuffer);
+    }
+}
+
+///////////    utility    ///////////
+
+void errorMessage(char *msg)
+{
+  
+}
+
+///////////    general arduino stuff    ///////////
+
+void setup(void) 
+{
+    Serial.begin(9600); 
+    wifiSetup(); 
+}
+
 void loop(void) 
 {
-    doTemperatureStuff();
+    Serial.println("Loop function called");
+    //doTemperatureStuff();
+    handleUDP();
+    delay(5000);
 }
 
