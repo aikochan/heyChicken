@@ -14,6 +14,7 @@ IPAddress serverAddress(SERVER_IPV4_BYTE0, SERVER_IPV4_BYTE1, SERVER_IPV4_BYTE2,
 const int UDP_PACKET_SIZE = 48; 
 byte packetBuffer[ UDP_PACKET_SIZE];    //buffer to hold incoming and outgoing packets
 WiFiUDP Udp;
+char currentRequest = 'N';
 
 // temp 
 #define MAX_DS1820_SENSORS  2
@@ -21,6 +22,9 @@ WiFiUDP Udp;
 
 boolean foundAllDevices = false;
 byte addr[MAX_DS1820_SENSORS][8];
+
+float curTemp1 = 0.0;
+float curTemp2 = 0.0;
 
 OneWire ds(DS18S20_Pin);    // temp sensors on digital pin 2
 
@@ -102,11 +106,6 @@ boolean getTemp(int sensor, float *result)
 
 void doTemperatureStuff(void)
 {
-    if (!foundAllDevices)
-    {
-        if (!(foundAllDevices = findDS18S20Devices())) return;
-    } 
-    
     float temp;
     for (int sensor = 0; sensor < MAX_DS1820_SENSORS; sensor++)
     {
@@ -139,13 +138,21 @@ void wifiSetup(void)
     { 
         Serial.print("Attempting to connect to SSID: ");
         Serial.println(ssid);
-        status = WiFi.begin(ssid, pwd);
-        delay(10000);    // wait 10 seconds for connection
+        status = WiFi.begin(ssid, pwd);  // WPA/WPA2 network
+        delay(10000);                    // wait 10 seconds for connection
     } 
     printWifiStatus();
     
     Serial.println("\nStarting connection to UDP server...");
     Udp.begin(udpPort);
+    
+    // send "awake" message to server at startup
+    sprintf((char *)packetBuffer, "A");
+    Serial.println((char *)packetBuffer);
+    Udp.beginPacket(serverAddress, udpPort);
+    Udp.write(packetBuffer, UDP_PACKET_SIZE);
+    Udp.endPacket();
+    delay(1000);   // don't knw why this is here
 }
 
 void printWifiStatus() 
@@ -166,24 +173,42 @@ void printWifiStatus()
     Serial.println(" dBm");
 }
 
+void readSensors(void)
+{
+    getTemp(0, &curTemp1);
+    getTemp(1, &curTemp2);
+}
+
 void handleUDP(void)
 {
-    // send packet if needed
-    memset(packetBuffer, 0, UDP_PACKET_SIZE);  // clear packet data
-    sprintf((char *)packetBuffer, "temp1: 23 temp2: 24");
-    Udp.beginPacket(serverAddress, udpPort);
-    Udp.write(packetBuffer, UDP_PACKET_SIZE);
-    Udp.endPacket();
-    delay(1000);
-    
     // read packet if present
     if ( Udp.parsePacket() ) 
     {
-         
         Serial.println("packet received");
         Udp.read(packetBuffer, UDP_PACKET_SIZE); // read the packet into the buffer
         Serial.println((char *)packetBuffer);
+        currentRequest = *(char *)packetBuffer;
+        Serial.println(currentRequest);
     }
+
+    // send packet if needed
+    if (currentRequest != 'N')
+    {
+        switch (currentRequest)
+        {
+            case 'R':
+                memset(packetBuffer, 0, UDP_PACKET_SIZE);  // clear packet data
+                // put the sensor data in a string
+                sprintf((char *)packetBuffer, "S %d %d ", int(round(curTemp1)), int(round(curTemp2)));
+                Serial.print((char *)packetBuffer);
+                break;
+        }
+        Udp.beginPacket(serverAddress, udpPort);
+        Udp.write(packetBuffer, UDP_PACKET_SIZE);
+        Udp.endPacket();
+        delay(1000);   // don't knw why this is here
+    }
+    
 }
 
 ///////////    utility    ///////////
@@ -204,7 +229,13 @@ void setup(void)
 void loop(void) 
 {
     Serial.println("Loop function called");
-    //doTemperatureStuff();
+    
+    //make sure temperature sensors are there
+    if (!foundAllDevices)
+    {
+        if (!(foundAllDevices = findDS18S20Devices())) return;
+    } 
+    readSensors();
     handleUDP();
     delay(5000);
 }
