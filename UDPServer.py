@@ -7,15 +7,19 @@ dataGatheringMode = True
 SERVER_IPADDRESS = "10.0.1.15"
 UDP_PORT = 9999
 	
-def receiveAlive(socket, clientAddress, data):
+def receiveAlive(socket, clientAddress, tokens):
+	print "Requesting status message\n"
 	if (dataGatheringMode):
 		socket.sendto("R", clientAddress)   # request status upon arduino starting up 
 
-def receiveStatus(socket, clientAddress, data):
-	print "Here's the status: <" + data + ">"
+def receiveStatus(socket, clientAddress, tokens):
+	print "Receiving status message\n"
+	print "Here's the status:"
+	print tokens 
 	
-def handleError(socket, clientAddress, data):
-	print "Error: <" + data + ">"
+def handleError(socket, clientAddress, tokens):
+	print "Error:"
+	print tokens
 	
 available_actions = {"A": receiveAlive,
                      "S": receiveStatus,
@@ -29,7 +33,7 @@ def processMessage(socket, clientAddress, data):
 	tokens = data.split()
 	if tokens:
 		action = tokens[0]
-		available_actions.get(action, lambda: None)(socket, clientAddress, data)
+		available_actions.get(action, lambda: None)(socket, clientAddress, tokens)
 	else:
 		print "Empty message"
 	

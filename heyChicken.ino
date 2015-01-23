@@ -18,15 +18,16 @@ char currentRequest = 'N';
 
 // temp 
 #define MAX_DS1820_SENSORS  2
-#define DS18S20_Pin         2 
+#define DS18S20_PIN         2 
 
 boolean foundAllDevices = false;
 byte addr[MAX_DS1820_SENSORS][8];
 
-float curTemp1 = 0.0;
-float curTemp2 = 0.0;
+OneWire ds(DS18S20_PIN);    // temp sensors on digital pin 2
 
-OneWire ds(DS18S20_Pin);    // temp sensors on digital pin 2
+// light & pressure
+#define PHOTOCELL_PIN      A0
+#define PRESSURE_PIN       A1
 
 ///////////    temperature sensors    ///////////
 
@@ -124,6 +125,20 @@ void doTemperatureStuff(void)
     }
 }
 
+///////////    photocell    ///////////
+
+void getLight(int *value)
+{
+    *value = analogRead(PHOTOCELL_PIN);
+}
+
+///////////    pressure    ///////////
+
+void getPressure(int *value)
+{
+    *value = analogRead(PRESSURE_PIN);
+}
+
 ///////////    wifi    ///////////
 
 void wifiSetup(void)
@@ -147,12 +162,12 @@ void wifiSetup(void)
     Udp.begin(udpPort);
     
     // send "awake" message to server at startup
-    sprintf((char *)packetBuffer, "A");
+    sprintf((char *)packetBuffer, "A \n");
     Serial.println((char *)packetBuffer);
     Udp.beginPacket(serverAddress, udpPort);
     Udp.write(packetBuffer, UDP_PACKET_SIZE);
     Udp.endPacket();
-    delay(1000);   // don't knw why this is here
+    delay(1000);   // don't know why this is here
 }
 
 void printWifiStatus() 
@@ -173,12 +188,6 @@ void printWifiStatus()
     Serial.println(" dBm");
 }
 
-void readSensors(void)
-{
-    getTemp(0, &curTemp1);
-    getTemp(1, &curTemp2);
-}
-
 void handleUDP(void)
 {
     // read packet if present
@@ -197,9 +206,20 @@ void handleUDP(void)
         switch (currentRequest)
         {
             case 'R':
+                Serial.println("Current request: status");
+                float tempCoop = 0.0;
+                float tempRun = 0.0;
+                int light = 0;
+                int pressure = 0;
+
+                getTemp(0, &tempCoop);
+                getTemp(1, &tempRun);
+                getLight(&light);
+                //getPressure(&pressure);
+                
                 memset(packetBuffer, 0, UDP_PACKET_SIZE);  // clear packet data
                 // put the sensor data in a string
-                sprintf((char *)packetBuffer, "S %d %d ", int(round(curTemp1)), int(round(curTemp2)));
+                sprintf((char *)packetBuffer, "S %d %d %d %d", int(round(tempCoop)), int(round(tempRun)), light, pressure);
                 Serial.print((char *)packetBuffer);
                 break;
         }
@@ -208,7 +228,6 @@ void handleUDP(void)
         Udp.endPacket();
         delay(1000);   // don't knw why this is here
     }
-    
 }
 
 ///////////    utility    ///////////
@@ -235,7 +254,6 @@ void loop(void)
     {
         if (!(foundAllDevices = findDS18S20Devices())) return;
     } 
-    readSensors();
     handleUDP();
     delay(5000);
 }
