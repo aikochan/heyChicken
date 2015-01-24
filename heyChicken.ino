@@ -27,7 +27,7 @@ OneWire ds(DS18S20_PIN);    // temp sensors on digital pin 2
 
 // light & pressure
 #define PHOTOCELL_PIN      A0
-#define PRESSURE_PIN       A1
+#define PRESSURE_PIN       A2
 
 ///////////    temperature sensors    ///////////
 
@@ -215,11 +215,10 @@ void handleUDP(void)
                 getTemp(0, &tempCoop);
                 getTemp(1, &tempRun);
                 getLight(&light);
-                //getPressure(&pressure);
+                getPressure(&pressure);
                 
                 memset(packetBuffer, 0, UDP_PACKET_SIZE);  // clear packet data
-                // put the sensor data in a string
-                sprintf((char *)packetBuffer, "S %d %d %d %d", int(round(tempCoop)), int(round(tempRun)), light, pressure);
+                sprintf((char *)packetBuffer, "S %d %d %d %d ", int(round(tempCoop)), int(round(tempRun)), light, pressure);
                 Serial.print((char *)packetBuffer);
                 break;
         }

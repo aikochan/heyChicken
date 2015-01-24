@@ -1,6 +1,7 @@
 #!/usr/bin/python
 
 import SocketServer
+import time
 
 dataGatheringMode = True
 
@@ -16,6 +17,9 @@ def receiveStatus(socket, clientAddress, tokens):
 	print "Receiving status message\n"
 	print "Here's the status:"
 	print tokens 
+	fileHandle = open('coopData', 'a')
+	fileHandle.write("{} {}\n".format(int(time.time()), " ".join(tokens[1:-1])))
+	fileHandle.close()	
 	
 def handleError(socket, clientAddress, tokens):
 	print "Error:"
@@ -49,6 +53,5 @@ class MyUDPHandler(SocketServer.BaseRequestHandler):
 if __name__ == "__main__":
     HOST, PORT = SERVER_IPADDRESS, UDP_PORT
     server = SocketServer.UDPServer((HOST, PORT), MyUDPHandler)
-    print "Starting UDP server"
-    f = open('workfile', 'w')
+    print "Starting UDP server"    
     server.serve_forever()
