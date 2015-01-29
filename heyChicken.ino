@@ -220,10 +220,8 @@ void handleUDP(void)
         // When mutliple analogRead calls are made in close temporal proximity, 
         // the first will affect the value of the second. 
         getPressure(&pressure); 
-        
         delay(500);
         getLight(&light);
-
         
         memset(packetBuffer, 0, UDP_PACKET_SIZE);  // clear packet data
         sprintf((char *)packetBuffer, "S %d %d %d %d ", int(round(tempCoop)), int(round(tempRun)), light, pressure);
