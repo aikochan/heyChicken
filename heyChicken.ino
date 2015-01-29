@@ -188,6 +188,20 @@ void printWifiStatus()
   Serial.println(" dBm");
 }
 
+void readSensors(float *tempCoop, float *tempRun, int *light, int *pressure)
+{
+  getTemp(0, tempCoop);
+  getTemp(1, tempRun);
+  getPressure(pressure);
+  delay(500);
+  // This second call to getPressure is used to disregard bad ananlogRead readings.
+  // When mutliple analogRead calls are made in close temporal proximity, 
+  // the first will affect the value of the second. 
+  getPressure(pressure); 
+  delay(500);
+  getLight(light);
+}
+
 void handleUDP(void)
 {
   // read packet if present
@@ -212,16 +226,7 @@ void handleUDP(void)
         int light = 0;
         int pressure = 0;
 
-        getTemp(0, &tempCoop);
-        getTemp(1, &tempRun);
-        getPressure(&pressure);
-        delay(500);
-        // This second call to getPressure is used to disregard bad ananlogRead readings.
-        // When mutliple analogRead calls are made in close temporal proximity, 
-        // the first will affect the value of the second. 
-        getPressure(&pressure); 
-        delay(500);
-        getLight(&light);
+        readSensors(&tempCoop, &tempRun, &light, &pressure);
         
         memset(packetBuffer, 0, UDP_PACKET_SIZE);  // clear packet data
         sprintf((char *)packetBuffer, "S %d %d %d %d ", int(round(tempCoop)), int(round(tempRun)), light, pressure);
