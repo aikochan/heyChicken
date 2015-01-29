@@ -1,24 +1,21 @@
-#include <WiFi.h>
-#include <WiFiUdp.h>
-#include "WiFiInfo.h"
+
 #include <SPI.h>
 #include <OneWire.h> 
 
-// wifi
-char ssid[] = WIFI_NETWORK;    // network SSID (name) 
-char pwd[] = WIFI_PASSWORD;    // network password
-
-int status = WL_IDLE_STATUS;
-unsigned int udpPort = 9999;          // local port to listen for UDP packets
-IPAddress serverAddress(SERVER_IPV4_BYTE0, SERVER_IPV4_BYTE1, SERVER_IPV4_BYTE2, SERVER_IPV4_BYTE3);
-const int UDP_PACKET_SIZE = 48; 
-byte packetBuffer[ UDP_PACKET_SIZE];    //buffer to hold incoming and outgoing packets
-WiFiUDP Udp;
-char currentRequest = 'N';
+// pin assignments
+#define DS18S20_PIN         2     // temperature
+#define PHOTOCELL_PIN       A0
+#define PRESSURE_PIN        A2
+#define STBY_PIN            4     // motor standby
+#define PWMA_PIN            3     // motor speed control 
+#define AIN1_PIN            9     // motor direction
+#define AIN2_PIN            8     // motor direction
+#define BUMP_OPEN_PIN       A4 
+#define BUMP_CLOSE_PIN      A5
+#define POWERTAIL_PIN       6
 
 // temp 
 #define MAX_DS1820_SENSORS  2
-#define DS18S20_PIN         2 
 
 boolean foundAllDevices = false;
 byte addr[MAX_DS1820_SENSORS][8];
@@ -26,8 +23,26 @@ byte addr[MAX_DS1820_SENSORS][8];
 OneWire ds(DS18S20_PIN);    // temp sensors on digital pin 2
 
 // light & pressure
-#define PHOTOCELL_PIN      A0
-#define PRESSURE_PIN       A2
+#define LIGHT_THRESHOLD       200
+#define PRESSURE_THRESHOLD    800
+
+// door state machine
+#define DOOR_OPEN          0
+#define DOOR_CLOSED        1
+#define DOOR_OPENING       2
+#define DOOR_CLOSING       3
+
+int doorState = DOOR_CLOSED;
+
+// powertail
+int powertailState = LOW;    // off
+
+// loop intervals
+#define DOOR_IDLE_DELAY_MS        1000
+#define DOOR_MOVING_DELAY_MS      250
+#define PRINT_SENSORS_FREQ        5      // multiples of DOOR_IDLE_DELAY_MS
+
+int loopCount = 0;
 
 ///////////    temperature sensors    ///////////
 
@@ -105,26 +120,6 @@ boolean getTemp(int sensor, float *result)
   return success;
 }
 
-void doTemperatureStuff(void)
-{
-  float temp;
-  for (int sensor = 0; sensor < MAX_DS1820_SENSORS; sensor++)
-  {
-    temp = 0;
-    if (getTemp(sensor, &temp)) 
-    {
-      Serial.print("Temp Sensor ");
-      Serial.print(sensor);
-      Serial.print(": ");
-      Serial.println(temp);
-    } else {
-      Serial.print("Failed to get reading for Temp Sensor ");
-      Serial.println(sensor);
-    }
-    delay(1000);
-  }
-}
-
 ///////////    photocell    ///////////
 
 void getLight(int *value)
@@ -136,56 +131,13 @@ void getLight(int *value)
 
 void getPressure(int *value)
 {
+  // This second call to getPressure is used to disregard bad ananlogRead readings.
+  // When mutliple analogRead calls are made in close temporal proximity, 
+  // the first will affect the value of the second. 
   *value = analogRead(PRESSURE_PIN);
-}
-
-///////////    wifi    ///////////
-
-void wifiSetup(void)
-{
-  if (WiFi.status() == WL_NO_SHIELD)
-  {
-    Serial.println("WiFi shield not present"); 
-    while(true);  // don't continue if the shield is not there
-  } 
-
-  while ( status != WL_CONNECTED) 
-  { 
-    Serial.print("Attempting to connect to SSID: ");
-    Serial.println(ssid);
-    status = WiFi.begin(ssid, pwd);  // WPA/WPA2 network
-    delay(10000);                    // wait 10 seconds for connection
-  } 
-  printWifiStatus();
-  
-  Serial.println("\nStarting connection to UDP server...");
-  Udp.begin(udpPort);
-  
-  // send "awake" message to server at startup
-  sprintf((char *)packetBuffer, "A \n");
-  Serial.println((char *)packetBuffer);
-  Udp.beginPacket(serverAddress, udpPort);
-  Udp.write(packetBuffer, UDP_PACKET_SIZE);
-  Udp.endPacket();
-  delay(1000);   // don't know why this is here
-}
-
-void printWifiStatus() 
-{
-  // print the SSID of the network you're attached to
-  Serial.print("SSID: ");
-  Serial.println(WiFi.SSID());
-
-  // print your WiFi shield's IP address
-  IPAddress ip = WiFi.localIP();
-  Serial.print("IP Address: ");
-  Serial.println(ip);
-
-  // print the received signal strength
-  long rssi = WiFi.RSSI();
-  Serial.print("signal strength (RSSI):");
-  Serial.print(rssi);
-  Serial.println(" dBm");
+   delay(500);
+   *value = analogRead(PRESSURE_PIN);
+   delay(500);
 }
 
 void readSensors(float *tempCoop, float *tempRun, int *light, int *pressure)
@@ -193,51 +145,120 @@ void readSensors(float *tempCoop, float *tempRun, int *light, int *pressure)
   getTemp(0, tempCoop);
   getTemp(1, tempRun);
   getPressure(pressure);
-  delay(500);
-  // This second call to getPressure is used to disregard bad ananlogRead readings.
-  // When mutliple analogRead calls are made in close temporal proximity, 
-  // the first will affect the value of the second. 
-  getPressure(pressure); 
-  delay(500);
   getLight(light);
 }
 
-void handleUDP(void)
+void printSensors()
 {
-  // read packet if present
-  if ( Udp.parsePacket() ) 
-  {
-    Serial.println("packet received");
-    Udp.read(packetBuffer, UDP_PACKET_SIZE); // read the packet into the buffer
-    Serial.println((char *)packetBuffer);
-    currentRequest = *(char *)packetBuffer;
-    Serial.println(currentRequest);
-  }
+  Serial.println("Current request: status");
+  float tempCoop = 0.0;
+  float tempRun = 0.0;
+  int light = 0;
+  int pressure = 0;
+  
+  readSensors(&tempCoop, &tempRun, &light, &pressure);
+  
+  Serial.print("coop temp: ");
+  Serial.print(tempCoop, 1);
+  Serial.print("\t");
 
-  // send packet if needed
-  if (currentRequest != 'N')
+  Serial.print("run temp: ");
+  Serial.print(tempRun, 1);
+  Serial.print("\t");
+  
+  Serial.print("light: ");
+  Serial.print(light);
+  Serial.print("\t");
+
+  Serial.print("pressure: ");
+  Serial.println(pressure);
+}
+
+///////////    door    ///////////
+void doorSetup()
+{
+  // set the door state, which we assume is not moving during setup
+  pinMode(STBY_PIN, OUTPUT);
+  pinMode(PWMA_PIN, OUTPUT);
+  pinMode(AIN1_PIN, OUTPUT);
+  pinMode(AIN2_PIN, OUTPUT);
+  pinMode(BUMP_OPEN_PIN, INPUT_PULLUP);
+  pinMode(BUMP_CLOSE_PIN, INPUT_PULLUP);
+  
+  if (digitalRead(BUMP_OPEN_PIN))
   {
-    switch (currentRequest)
+    doorState = DOOR_OPEN;
+    // this should not happen
+    if (digitalRead(BUMP_CLOSE_PIN))
     {
-      case 'R':
-        Serial.println("Current request: status");
-        float tempCoop = 0.0;
-        float tempRun = 0.0;
-        int light = 0;
-        int pressure = 0;
-
-        readSensors(&tempCoop, &tempRun, &light, &pressure);
-        
-        memset(packetBuffer, 0, UDP_PACKET_SIZE);  // clear packet data
-        sprintf((char *)packetBuffer, "S %d %d %d %d ", int(round(tempCoop)), int(round(tempRun)), light, pressure);
-        Serial.print((char *)packetBuffer);
-        break;
+      Serial.println("ERROR: both open and closed bumper are HIGH. Assuming door is open.");
     }
-    Udp.beginPacket(serverAddress, udpPort);
-    Udp.write(packetBuffer, UDP_PACKET_SIZE);
-    Udp.endPacket();
-    delay(1000);   // don't knw why this is here
+  } else {    // door is closed as set by default
+    if (!digitalRead(BUMP_CLOSE_PIN))
+    {
+      Serial.println("ERROR: both open and closed bumper are LOW. Assuming door is closed.");
+      // perhaps we should shut the door in this case since it is technically a valid state
+    }
   }
+}
+
+// It is ok to close if the chickens are on roost and it is dark outside
+boolean okToCloseDoor()
+{
+  boolean isOK = false;
+  int pressure = 0;
+  int light = 0;
+  
+  getPressure(&pressure); 
+  getLight(&light);
+  
+  if (pressure > PRESSURE_THRESHOLD && light < LIGHT_THRESHOLD)
+  {
+    isOK = true;
+  }
+  return isOK;
+}
+
+void closeTheDoor()
+{
+  // turn off the sun
+  
+  // motor +
+  
+  // change state
+}
+
+// It is ok to open if it is light outside.
+// We don't care about the roost situation. 
+boolean okToOpenDoor()
+{
+  boolean isOK = false;
+  int light = 0;
+  
+  getLight(&light);
+  
+  if (light > LIGHT_THRESHOLD)
+  {
+    isOK = true;
+  }
+  return isOK;
+}
+
+void openTheDoor()
+{
+  
+}
+
+///////////    powertail    ///////////
+void powertailSetup()
+{
+  pinMode(POWERTAIL_PIN, OUTPUT);
+}
+
+void togglePowertail()
+{
+  powertailState = !powertailState;
+  digitalWrite(POWERTAIL_PIN, powertailState);
 }
 
 ///////////    utility    ///////////
@@ -252,7 +273,8 @@ void errorMessage(char *msg)
 void setup(void) 
 {
   Serial.begin(9600); 
-  wifiSetup(); 
+  doorSetup();
+  powertailSetup();
 }
 
 void loop(void) 
@@ -263,8 +285,8 @@ void loop(void)
   if (!foundAllDevices)
   {
     if (!(foundAllDevices = findDS18S20Devices())) return;
-  } 
-  handleUDP();
+  }
+  printSensors();
   delay(5000);
 }
 
