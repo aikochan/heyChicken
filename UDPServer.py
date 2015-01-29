@@ -5,7 +5,7 @@ import time
 
 dataGatheringMode = True
 
-SERVER_IPADDRESS = "10.0.1.15"
+SERVER_IPADDRESS = "10.0.1.10"
 UDP_PORT = 9999
 	
 def receiveAlive(socket, clientAddress, tokens):

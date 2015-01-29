@@ -214,8 +214,11 @@ void handleUDP(void)
 
                 getTemp(0, &tempCoop);
                 getTemp(1, &tempRun);
-                getLight(&light);
                 getPressure(&pressure);
+                delay(500);
+                getPressure(&pressure);
+                delay(500);
+                getLight(&light);
                 
                 memset(packetBuffer, 0, UDP_PACKET_SIZE);  // clear packet data
                 sprintf((char *)packetBuffer, "S %d %d %d %d ", int(round(tempCoop)), int(round(tempRun)), light, pressure);
