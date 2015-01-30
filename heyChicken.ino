@@ -34,6 +34,20 @@ OneWire ds(DS18S20_PIN);    // temp sensors on digital pin 2
 
 int doorState = DOOR_CLOSED;
 
+// door stop bumpers
+#define BUMPER_TRIGGERED   HIGH
+#define BUMPER_CLEAR       LOW 
+
+int openBumper = BUMPER_CLEAR;
+int closeBumper = BUMPER_CLEAR;
+
+// motor direction
+// swap these values if the door is going the wrong direction
+#define MOTOR_CLOSE_DOOR  0
+#define MOTOR_OPEN_DOOR   1
+
+#define MOTOR_SPEED       255  // go as fast as you can!
+
 // powertail
 int powertailState = LOW;    // off
 
@@ -202,6 +216,32 @@ void doorSetup()
   }
 }
 
+void move(int speed, int direction)
+{
+//Move specific motor at speed and direction
+//speed: 0 is off, and 255 is full speed
+
+  digitalWrite(STBY_PIN, HIGH); //disable standby
+
+  boolean pin1State = LOW;
+  boolean pin2State = HIGH;
+
+  if (direction == MOTOR_OPEN_DOOR)
+  {
+    pin1State = HIGH;
+    pin2State = LOW;
+  }
+
+    digitalWrite(AIN1_PIN, pin1State);
+    digitalWrite(AIN2_PIN, pin2State);
+    analogWrite(PWMA_PIN, speed);
+}
+
+void stop()
+{
+  digitalWrite(STBY_PIN, LOW); 
+}
+
 // It is ok to close if the chickens are on roost and it is dark outside
 boolean okToCloseDoor()
 {
@@ -215,17 +255,15 @@ boolean okToCloseDoor()
   if (pressure > PRESSURE_THRESHOLD && light < LIGHT_THRESHOLD)
   {
     isOK = true;
+    togglePowertail();  // turn off the sun
   }
   return isOK;
 }
 
 void closeTheDoor()
 {
-  // turn off the sun
-  
-  // motor +
-  
-  // change state
+  doorState = DOOR_CLOSING;
+  move(MOTOR_SPEED, MOTOR_CLOSE_DOOR);
 }
 
 // It is ok to open if it is light outside.
@@ -240,19 +278,22 @@ boolean okToOpenDoor()
   if (light > LIGHT_THRESHOLD)
   {
     isOK = true;
+    togglePowertail();  // turn on the sun
   }
   return isOK;
 }
 
 void openTheDoor()
 {
-  
+  doorState = DOOR_OPENING;
+  move(MOTOR_SPEED, MOTOR_OPEN_DOOR);
 }
 
 ///////////    powertail    ///////////
 void powertailSetup()
 {
   pinMode(POWERTAIL_PIN, OUTPUT);
+  digitalWrite(POWERTAIL_PIN, LOW);  // make sure it is off
 }
 
 void togglePowertail()
@@ -281,10 +322,15 @@ void loop(void)
 {
   Serial.println("Loop function called");
   
-  //make sure temperature sensors are there
+  // make sure temperature sensors are there
+  // don't do this if the door is moving
   if (!foundAllDevices)
   {
-    if (!(foundAllDevices = findDS18S20Devices())) return;
+    if (!(foundAllDevices = findDS18S20Devices())) 
+    {
+      delay(5000);
+      return;
+    }
   }
   printSensors();
   delay(5000);
