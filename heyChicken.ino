@@ -182,7 +182,7 @@ void printSensors()
   Serial.print("\t");
 
   Serial.print("run: ");
-  tempF = convertCtoF(tempRun);
+  tempF = CtoF(tempRun);
   Serial.print(tempF, 1);
   Serial.print("F");
   Serial.print("\t");

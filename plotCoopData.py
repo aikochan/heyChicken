@@ -73,7 +73,7 @@ plt.subplots_adjust(bottom=.2)
 leg = ax1.legend(loc=4)
 
 #plt.xlim(0, 20000)
-#plt.ylim(-10, 100)
+plt.ylim(-2, 100)
 
 plt.show()
 
