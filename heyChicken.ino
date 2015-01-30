@@ -24,7 +24,7 @@ OneWire ds(DS18S20_PIN);    // temp sensors on digital pin 2
 
 // light & pressure
 #define LIGHT_THRESHOLD       200
-#define PRESSURE_THRESHOLD    800
+#define PRESSURE_THRESHOLD    500
 
 // door state machine
 #define DOOR_OPEN          0
@@ -35,18 +35,16 @@ OneWire ds(DS18S20_PIN);    // temp sensors on digital pin 2
 int doorState = DOOR_CLOSED;
 
 // door stop bumpers
-#define BUMPER_TRIGGERED   HIGH
-#define BUMPER_CLEAR       LOW 
+#define BUMPER_TRIGGERED   LOW
+#define BUMPER_CLEAR       HIGH 
 
 int openBumper = BUMPER_CLEAR;
 int closeBumper = BUMPER_CLEAR;
 
-// motor direction
-// swap these values if the door is going the wrong direction
+#define MOTOR_SPEED       255  // go as fast as you can!
+// motor direction: swap these values if the door is going the wrong direction
 #define MOTOR_CLOSE_DOOR  0
 #define MOTOR_OPEN_DOOR   1
-
-#define MOTOR_SPEED       255  // go as fast as you can!
 
 // powertail
 int powertailState = LOW;    // off
@@ -162,22 +160,31 @@ void readSensors(float *tempCoop, float *tempRun, int *light, int *pressure)
   getLight(light);
 }
 
+float CtoF(float tempCelsius)
+{
+  return (tempCelsius * 9 / 5 + 32);
+}
+
 void printSensors()
 {
-  Serial.println("Current request: status");
   float tempCoop = 0.0;
   float tempRun = 0.0;
+  float tempF = 0.0;
   int light = 0;
   int pressure = 0;
   
   readSensors(&tempCoop, &tempRun, &light, &pressure);
   
-  Serial.print("coop temp: ");
-  Serial.print(tempCoop, 1);
+  Serial.print("coop: ");
+  tempF = CtoF(tempCoop);
+  Serial.print(tempF, 1);
+  Serial.print("F");
   Serial.print("\t");
 
-  Serial.print("run temp: ");
-  Serial.print(tempRun, 1);
+  Serial.print("run: ");
+  tempF = convertCtoF(tempRun);
+  Serial.print(tempF, 1);
+  Serial.print("F");
   Serial.print("\t");
   
   Serial.print("light: ");
@@ -199,18 +206,18 @@ void doorSetup()
   pinMode(BUMP_OPEN_PIN, INPUT_PULLUP);
   pinMode(BUMP_CLOSE_PIN, INPUT_PULLUP);
   
-  if (digitalRead(BUMP_OPEN_PIN))
+  if (BUMPER_TRIGGERED == digitalRead(BUMP_OPEN_PIN))
   {
     doorState = DOOR_OPEN;
     // this should not happen
-    if (digitalRead(BUMP_CLOSE_PIN))
+    if (BUMPER_TRIGGERED == digitalRead(BUMP_CLOSE_PIN))
     {
       Serial.println("ERROR: both open and closed bumper are HIGH. Assuming door is open.");
     } else {
       Serial.println("Door is open");
     }
   } else {    // door is closed as set by default
-    if (!digitalRead(BUMP_CLOSE_PIN))
+    if (BUMPER_CLEAR == digitalRead(BUMP_CLOSE_PIN))
     {
       Serial.println("ERROR: both open and closed bumper are LOW. Closing door.");
       // shut the door in this case since it is technically a valid state
@@ -228,22 +235,20 @@ void move(int speed, int direction)
 
   digitalWrite(STBY_PIN, HIGH); //disable standby
 
-  boolean pin1State = LOW;
-  boolean pin2State = HIGH;
-
-  if (direction == MOTOR_OPEN_DOOR)
+  if (MOTOR_OPEN_DOOR == direction)
   {
-    pin1State = HIGH;
-    pin2State = LOW;
+    digitalWrite(AIN1_PIN, LOW);
+    digitalWrite(AIN2_PIN, HIGH);
+  } else {
+    digitalWrite(AIN1_PIN, HIGH);
+    digitalWrite(AIN2_PIN, LOW);
   }
-
-    digitalWrite(AIN1_PIN, pin1State);
-    digitalWrite(AIN2_PIN, pin2State);
-    analogWrite(PWMA_PIN, speed);
+  analogWrite(PWMA_PIN, speed);
 }
 
 void stopTheDoor()
 {
+  Serial.println("Stopping door");
   digitalWrite(STBY_PIN, LOW); 
 }
 
@@ -267,6 +272,7 @@ boolean okToCloseDoor()
 
 void closeTheDoor()
 {
+  Serial.println("Closing door...");
   // door starting to move, all bumpers should be clear
   openBumper = BUMPER_CLEAR;
   closeBumper = BUMPER_CLEAR;
@@ -293,6 +299,7 @@ boolean okToOpenDoor()
 
 void openTheDoor()
 {
+  Serial.println("Opening door...");
   // door starting to move, all bumpers should be clear
   openBumper = BUMPER_CLEAR;
   closeBumper = BUMPER_CLEAR;
@@ -324,9 +331,9 @@ void errorMessage(char *msg)
 
 void setup(void) 
 {
-  Serial.begin(9600); 
+  Serial.begin(9600);
+  powertailSetup(); 
   doorSetup();
-  powertailSetup();
 }
 
 void performDoorIdleTasks()
@@ -335,29 +342,29 @@ void performDoorIdleTasks()
   {
     printSensors();
   }
-  delay(DOOR_IDLE_DELAY_MS); 
 }
 
 void loop(void) 
 {
-//  Serial.println("Loop function called");
+//  Serial.print("Door state: ");
+//  Serial.println(doorState);
   
   // make sure temperature sensors are there
   // don't do this if the door is moving
-//  if (!foundAllDevices)
-//  {
-//    if (!(foundAllDevices = findDS18S20Devices())) 
-//    {
-//      delay(5000);
-//      return;
-//    }
-//  }
-//  printSensors();
+  if (doorState < 2 && !foundAllDevices)
+  {
+    if (!(foundAllDevices = findDS18S20Devices())) 
+    {
+      delay(5000);
+      return;
+    }
+  }
+  
   switch (doorState)
   {
     // DOOR_OPENING/DOOR_CLOSING: door is moving, need to poll frequently for bumper
     case DOOR_OPENING:
-      if (digitalRead(BUMP_OPEN_PIN)) 
+      if (BUMPER_TRIGGERED == digitalRead(BUMP_OPEN_PIN)) 
       {
         openBumper = BUMPER_TRIGGERED;
         stopTheDoor();
@@ -369,7 +376,7 @@ void loop(void)
       }
       break;
     case DOOR_CLOSING:
-      if (digitalRead(BUMP_CLOSE_PIN)) 
+      if (BUMPER_TRIGGERED == digitalRead(BUMP_CLOSE_PIN)) 
       {
         closeBumper = BUMPER_TRIGGERED;
         stopTheDoor();
@@ -389,6 +396,7 @@ void loop(void)
         closeTheDoor();
       } else {
         performDoorIdleTasks();
+        delay(DOOR_IDLE_DELAY_MS); 
       }
       break;
       
@@ -399,6 +407,7 @@ void loop(void)
         openTheDoor();
       } else {
         performDoorIdleTasks();
+        delay(DOOR_IDLE_DELAY_MS); 
       }
       break;
   }
