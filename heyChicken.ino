@@ -206,12 +206,17 @@ void doorSetup()
     if (digitalRead(BUMP_CLOSE_PIN))
     {
       Serial.println("ERROR: both open and closed bumper are HIGH. Assuming door is open.");
+    } else {
+      Serial.println("Door is open");
     }
   } else {    // door is closed as set by default
     if (!digitalRead(BUMP_CLOSE_PIN))
     {
-      Serial.println("ERROR: both open and closed bumper are LOW. Assuming door is closed.");
-      // perhaps we should shut the door in this case since it is technically a valid state
+      Serial.println("ERROR: both open and closed bumper are LOW. Closing door.");
+      // shut the door in this case since it is technically a valid state
+      closeTheDoor();  // now we are in a known state to begin
+    } else {
+      Serial.println("Door is closed");
     }
   }
 }
@@ -237,7 +242,7 @@ void move(int speed, int direction)
     analogWrite(PWMA_PIN, speed);
 }
 
-void stop()
+void stopTheDoor()
 {
   digitalWrite(STBY_PIN, LOW); 
 }
@@ -262,6 +267,9 @@ boolean okToCloseDoor()
 
 void closeTheDoor()
 {
+  // door starting to move, all bumpers should be clear
+  openBumper = BUMPER_CLEAR;
+  closeBumper = BUMPER_CLEAR;
   doorState = DOOR_CLOSING;
   move(MOTOR_SPEED, MOTOR_CLOSE_DOOR);
 }
@@ -285,6 +293,9 @@ boolean okToOpenDoor()
 
 void openTheDoor()
 {
+  // door starting to move, all bumpers should be clear
+  openBumper = BUMPER_CLEAR;
+  closeBumper = BUMPER_CLEAR;
   doorState = DOOR_OPENING;
   move(MOTOR_SPEED, MOTOR_OPEN_DOOR);
 }
@@ -318,21 +329,78 @@ void setup(void)
   powertailSetup();
 }
 
+void performDoorIdleTasks()
+{
+  if (loopCount++ % PRINT_SENSORS_FREQ == 0)
+  {
+    printSensors();
+  }
+  delay(DOOR_IDLE_DELAY_MS); 
+}
+
 void loop(void) 
 {
-  Serial.println("Loop function called");
+//  Serial.println("Loop function called");
   
   // make sure temperature sensors are there
   // don't do this if the door is moving
-  if (!foundAllDevices)
+//  if (!foundAllDevices)
+//  {
+//    if (!(foundAllDevices = findDS18S20Devices())) 
+//    {
+//      delay(5000);
+//      return;
+//    }
+//  }
+//  printSensors();
+  switch (doorState)
   {
-    if (!(foundAllDevices = findDS18S20Devices())) 
-    {
-      delay(5000);
-      return;
-    }
+    // DOOR_OPENING/DOOR_CLOSING: door is moving, need to poll frequently for bumper
+    case DOOR_OPENING:
+      if (digitalRead(BUMP_OPEN_PIN)) 
+      {
+        openBumper = BUMPER_TRIGGERED;
+        stopTheDoor();
+        doorState = DOOR_OPEN;
+        delay(1000);
+      } else {
+        delay(DOOR_MOVING_DELAY_MS);
+        return;
+      }
+      break;
+    case DOOR_CLOSING:
+      if (digitalRead(BUMP_CLOSE_PIN)) 
+      {
+        closeBumper = BUMPER_TRIGGERED;
+        stopTheDoor();
+        doorState = DOOR_CLOSED;
+        delay(1000);
+      } else {
+        delay(DOOR_MOVING_DELAY_MS);
+        return;
+      }      
+      break;
+     
+     //  DOOR_OPEN/DOOR_CLOSED: Idle state, poll less frequently and take care of periodic tasks
+    case DOOR_OPEN:
+      // do we need to close the door?
+      if (okToCloseDoor())
+      {
+        closeTheDoor();
+      } else {
+        performDoorIdleTasks();
+      }
+      break;
+      
+    case DOOR_CLOSED:
+      // do we need to open the door?
+      if (okToOpenDoor())
+      {
+        openTheDoor();
+      } else {
+        performDoorIdleTasks();
+      }
+      break;
   }
-  printSensors();
-  delay(5000);
 }
 
