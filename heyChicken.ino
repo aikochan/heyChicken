@@ -23,8 +23,8 @@ byte addr[MAX_DS1820_SENSORS][8];
 OneWire ds(DS18S20_PIN);    // temp sensors on digital pin 2
 
 // light & pressure
-#define LIGHT_THRESHOLD       200
-#define PRESSURE_THRESHOLD    500
+#define LIGHT_THRESHOLD       100
+#define PRESSURE_THRESHOLD    400
 
 // door state machine
 #define DOOR_OPEN          0
@@ -215,6 +215,7 @@ void doorSetup()
       Serial.println("ERROR: both open and closed bumper are HIGH. Assuming door is open.");
     } else {
       Serial.println("Door is open");
+      closeTheDoor();
     }
   } else {    // door is closed as set by default
     if (BUMPER_CLEAR == digitalRead(BUMP_CLOSE_PIN))
@@ -266,6 +267,10 @@ boolean okToCloseDoor()
   {
     isOK = true;
     togglePowertail();  // turn off the sun
+    Serial.print("It is dark outside and the chickies are sleeping.\nLight: ");
+    Serial.print(light);
+    Serial.print("\tpressure: ");
+    Serial.println(pressure);
   }
   return isOK;
 }
@@ -293,6 +298,8 @@ boolean okToOpenDoor()
   {
     isOK = true;
     togglePowertail();  // turn on the sun
+    Serial.print("Looks like the sun is up! Light is ");
+    Serial.println(light);
   }
   return isOK;
 }
