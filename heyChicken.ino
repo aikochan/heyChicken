@@ -4,6 +4,18 @@
 #include <SPI.h>
 #include <OneWire.h> 
 
+// pin assignments
+#define DS18S20_PIN         2     // temperature
+#define PHOTOCELL_PIN       A0
+#define PRESSURE_PIN        A2
+#define STBY_PIN            4     // motor standby
+#define PWMA_PIN            3     // motor speed control 
+#define AIN1_PIN            9     // motor direction
+#define AIN2_PIN            8     // motor direction
+#define BUMP_OPEN_PIN       A4 
+#define BUMP_CLOSE_PIN      A5
+#define POWERTAIL_PIN       6
+
 // wifi
 char ssid[] = WIFI_NETWORK;    // network SSID (name) 
 char pwd[] = WIFI_PASSWORD;    // network password
@@ -18,16 +30,14 @@ char currentRequest = 'N';
 
 // temp 
 #define MAX_DS1820_SENSORS  2
-#define DS18S20_PIN         2 
 
 boolean foundAllDevices = false;
 byte addr[MAX_DS1820_SENSORS][8];
 
 OneWire ds(DS18S20_PIN);    // temp sensors on digital pin 2
 
-// light & pressure
-#define PHOTOCELL_PIN      A0
-#define PRESSURE_PIN       A2
+// powertail
+int powertailState = LOW;    // off
 
 ///////////    temperature sensors    ///////////
 
@@ -223,6 +233,19 @@ void handleUDP(void)
     Udp.endPacket();
     delay(1000);   // don't knw why this is here
   }
+}
+
+///////////    powertail    ///////////
+void powertailSetup()
+{
+  pinMode(POWERTAIL_PIN, OUTPUT);
+  digitalWrite(POWERTAIL_PIN, LOW);  // make sure it is off
+}
+
+void togglePowertail()
+{
+  powertailState = !powertailState;
+  digitalWrite(POWERTAIL_PIN, powertailState);
 }
 
 ///////////    utility    ///////////
