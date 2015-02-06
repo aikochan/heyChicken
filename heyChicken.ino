@@ -105,24 +105,9 @@ boolean getTemp(int sensor, float *result)
   return success;
 }
 
-void doTemperatureStuff(void)
+float CtoF(float tempCelsius)
 {
-  float temp;
-  for (int sensor = 0; sensor < MAX_DS1820_SENSORS; sensor++)
-  {
-    temp = 0;
-    if (getTemp(sensor, &temp)) 
-    {
-      Serial.print("Temp Sensor ");
-      Serial.print(sensor);
-      Serial.print(": ");
-      Serial.println(temp);
-    } else {
-      Serial.print("Failed to get reading for Temp Sensor ");
-      Serial.println(sensor);
-    }
-    delay(1000);
-  }
+  return (tempCelsius * 9 / 5 + 32);
 }
 
 ///////////    photocell    ///////////
@@ -136,7 +121,13 @@ void getLight(int *value)
 
 void getPressure(int *value)
 {
+  // This second call to getPressure is used to disregard bad ananlogRead readings.
+  // When mutliple analogRead calls are made in close temporal proximity, 
+  // the first will affect the value of the second. 
   *value = analogRead(PRESSURE_PIN);
+   delay(500);
+   *value = analogRead(PRESSURE_PIN);
+   delay(500);
 }
 
 ///////////    wifi    ///////////
@@ -193,12 +184,6 @@ void readSensors(float *tempCoop, float *tempRun, int *light, int *pressure)
   getTemp(0, tempCoop);
   getTemp(1, tempRun);
   getPressure(pressure);
-  delay(500);
-  // This second call to getPressure is used to disregard bad ananlogRead readings.
-  // When mutliple analogRead calls are made in close temporal proximity, 
-  // the first will affect the value of the second. 
-  getPressure(pressure); 
-  delay(500);
   getLight(light);
 }
 
