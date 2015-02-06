@@ -38,9 +38,11 @@ byte addr[MAX_DS1820_SENSORS][8];
 
 OneWire ds(DS18S20_PIN);    // temp sensors on digital pin 2
 
-// light & pressure
+// sensor thresholds for action
 #define LIGHT_THRESHOLD       100
 #define PRESSURE_THRESHOLD    400
+#define TEMPF_HEATER_ON       20
+#define TEMPF_HEATER_OFF      40
 
 // door state machine
 #define DOOR_OPEN          0
@@ -107,7 +109,7 @@ boolean findDS18S20Devices(void)
   return success;
 }
 
-// obtains the temperature from one DS18S20 in DEG Celsius as result
+// obtains the temperature from one DS18S20 in degrees F as result
 // returns true on success, false on sensor index out of bounds or CRC check failed on read
 boolean getTemp(int sensor, float *result)
 {
@@ -143,10 +145,23 @@ boolean getTemp(int sensor, float *result)
       success = false;
     } else {
       float tempRead = ((data[1] << 8) | data[0]);     //using two's compliment (???)
-      *result = (tempRead / 16);
+      *result = CtoF((tempRead / 16));
     }
   }
   return success;
+}
+
+
+void checkHeater(float coopTemp)
+{
+  if (coopTemp < TEMPF_HEATER_ON && !powertailState) // if the coop is too cold and the heater is off, turn it on
+  {
+    setPowertail(HIGH);
+    Serial.println("Turning heater on...");
+  } else if (coopTemp > TEMPF_HEATER_OFF && powertailState) { // if the coop is too hot and the heater is on, turn it off
+    setPowertail(LOW);
+    Serial.println("Turning heater off...");
+  } 
 }
 
 float CtoF(float tempCelsius)
@@ -159,6 +174,16 @@ float CtoF(float tempCelsius)
 void getLight(int *value)
 {
   *value = analogRead(PHOTOCELL_PIN);
+}
+
+boolean isItSunrise()
+{
+  
+}
+
+boolean isItSunset()
+{
+  
 }
 
 ///////////    pressure    ///////////
@@ -174,34 +199,9 @@ void getPressure(int *value)
    delay(500);
 }
 
-void printSensors()
+boolean chickensOnRoost(int currentPressure)
 {
-  float tempCoop = 0.0;
-  float tempRun = 0.0;
-  float tempF = 0.0;
-  int light = 0;
-  int pressure = 0;
   
-  readSensors(&tempCoop, &tempRun, &light, &pressure);
-  
-  Serial.print("coop: ");
-  tempF = CtoF(tempCoop);
-  Serial.print(tempF, 1);
-  Serial.print("F");
-  Serial.print("\t");
-
-  Serial.print("run: ");
-  tempF = CtoF(tempRun);
-  Serial.print(tempF, 1);
-  Serial.print("F");
-  Serial.print("\t");
-  
-  Serial.print("light: ");
-  Serial.print(light);
-  Serial.print("\t");
-
-  Serial.print("pressure: ");
-  Serial.println(pressure);
 }
 
 ///////////    door    ///////////
@@ -275,7 +275,7 @@ boolean okToCloseDoor()
   if (pressure > PRESSURE_THRESHOLD && light < LIGHT_THRESHOLD)
   {
     isOK = true;
-    togglePowertail();  // turn off the sun
+    setPowertail(LOW);  // turn off the sun
     Serial.print("It is dark outside and the chickies are sleeping.\nLight: ");
     Serial.print(light);
     Serial.print("\tpressure: ");
@@ -306,7 +306,7 @@ boolean okToOpenDoor()
   if (light > LIGHT_THRESHOLD)
   {
     isOK = true;
-    togglePowertail();  // turn on the sun
+    setPowertail(HIGH);  // turn on the sun
     Serial.print("Looks like the sun is up! Light is ");
     Serial.println(light);
   }
@@ -378,9 +378,30 @@ void readSensors(float *tempCoop, float *tempRun, int *light, int *pressure)
   getTemp(1, tempRun);
   getPressure(pressure);
   getLight(light);
+  
+  Serial.print("coop: ");
+  Serial.print(*tempCoop, 1);
+  Serial.print("F");
+  Serial.print("\t");
+
+  Serial.print("run: ");
+  Serial.print(*tempRun, 1);
+  Serial.print("F");
+  Serial.print("\t");
+  
+  Serial.print("light: ");
+  Serial.print(*light);
+  Serial.print("\t");
+
+  Serial.print("pressure: ");
+  Serial.print(*pressure);
+  Serial.print("\t");
+
+  Serial.print("heater: ");
+  Serial.println(powertailState);
 }
 
-void handleUDP(void)
+void handleUDP(float *tempCoop, float *tempRun, int *light, int *pressure)
 {
   // read packet if present
   if ( Udp.parsePacket() ) 
@@ -399,15 +420,8 @@ void handleUDP(void)
     {
       case 'R':
         Serial.println("Current request: status");
-        float tempCoop = 0.0;
-        float tempRun = 0.0;
-        int light = 0;
-        int pressure = 0;
-
-        readSensors(&tempCoop, &tempRun, &light, &pressure);
-        
         memset(packetBuffer, 0, UDP_PACKET_SIZE);  // clear packet data
-        sprintf((char *)packetBuffer, "S %d %d %d %d ", int(round(tempCoop)), int(round(tempRun)), light, pressure);
+        sprintf((char *)packetBuffer, "S %d %d %d %d %d", int(round(*tempCoop)), int(round(*tempRun)), *light, *pressure, powertailState);
         Serial.print((char *)packetBuffer);
         break;
     }
@@ -422,13 +436,14 @@ void handleUDP(void)
 void powertailSetup()
 {
   pinMode(POWERTAIL_PIN, OUTPUT);
-  digitalWrite(POWERTAIL_PIN, LOW);  // make sure it is off
+  setPowertail(LOW);  // make sure it is off
+  powertailState = LOW;
 }
 
-void togglePowertail()
+void setPowertail(int state)
 {
-  powertailState = !powertailState;
-  digitalWrite(POWERTAIL_PIN, powertailState);
+  digitalWrite(POWERTAIL_PIN, state);
+  powertailState = state;
 }
 
 ///////////    utility    ///////////
@@ -450,17 +465,14 @@ void setup(void)
   powertailSetup(); 
 }
 
-void performDoorIdleTasks()
-{
-  if (loopCount++ % PRINT_SENSORS_FREQ == 0)
-  {
-    printSensors();
-  }
-}
-
 void loop(void) 
 {
-  Serial.println("Loop function called");
+  //Serial.println("Loop function called");
+  
+  float tempCoop = 0.0;
+  float tempRun = 0.0;
+  int light = 0;
+  int pressure = 0; 
   
   // make sure temperature sensors are there
   // don't do this if the door is moving
@@ -527,9 +539,13 @@ void loop(void)
   }
 #endif    // OPERATE_DOOR
 
-  handleUDP();
+  readSensors(&tempCoop, &tempRun, &light, &pressure);
+  checkHeater(tempCoop);
+  handleUDP(&tempCoop, &tempRun, &light, &pressure);
+  
 #if !OPERATE_DOOR
   delay(IDLE_DELAY);
 #endif
+
 }
 
