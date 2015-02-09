@@ -17,7 +17,7 @@ IPAddress serverAddress(SERVER_IPV4_BYTE0, SERVER_IPV4_BYTE1, SERVER_IPV4_BYTE2,
 const int UDP_PACKET_SIZE = 48; 
 byte packetBuffer[ UDP_PACKET_SIZE];    //buffer to hold incoming and outgoing packets
 WiFiUDP Udp;
-char currentRequest = 'N';
+char currentRequest = MSG_NO_OP;
 #endif
 
 // temp 
@@ -374,17 +374,19 @@ void handleUDP(float tempCoop, float tempRun, int light, int pressure, CoopChang
   }
 
   // send packet if needed
-  if (currentRequest != 'N')
+  if (currentRequest != MSG_NO_OP)
   {
     switch (currentRequest)
     {
-      case 'R':
+      case MSG_REQ_STATUS:
         Serial.println("Current request: status");
         memset(packetBuffer, 0, UDP_PACKET_SIZE);  // clear packet data
         // packet format: tempCoop | tempRun | light | pressure | heater on/off | heater changed
         sprintf((char *)packetBuffer, "S %d %d %d %d %s %d ", int(round(tempCoop)), int(round(tempRun)), light, pressure, 
                                                            (powertailState ? "on":"off"), heaterChange);
         Serial.println((char *)packetBuffer);
+        break;
+      case MSG_THRESHOLD:
         break;
     }
     Udp.beginPacket(serverAddress, udpPort);

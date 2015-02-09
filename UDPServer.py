@@ -9,20 +9,28 @@ HEATER_STATUS_INDEX = 5
 SERVER_IPADDRESS = "10.0.1.16"
 UDP_PORT = 9999
 
-def checkHeater(heaterStatus)
-	
-	
+MSG_ALIVE = 'A'
+MSG_REQ_STATUS = 'R'
+MSG_STATUS = 'S'
+MSG_THRESHOLD = 'T'
+MSG_DOOR = 'D'
+MSG_HEAT = 'H'
+MSG_ERROR = 'E'
+MSG_NO_OP = 'N'
+
+#def checkHeater(heaterStatus):
+
 def receiveAlive(socket, clientAddress, tokens):
 	print "Requesting status message\n"
 	if (DATA_GATHERING_MODE):
-		socket.sendto("R", clientAddress)   # request status upon arduino starting up 
+		socket.sendto(MSG_REQ_STATUS, clientAddress)   # request status upon arduino starting up 
 
 def receiveStatus(socket, clientAddress, tokens):
 	print "Receiving status message\n"
 	print "Here's the status:"
 	print tokens 
 	
-	if (DATA_GATHERING_MODE)
+	if (DATA_GATHERING_MODE):
 		fileHandle = open('coopData', 'a')
 		fileHandle.write("{} {}\n".format(int(time.time()), " ".join(tokens[1:-1])))
 		fileHandle.close()	
@@ -31,9 +39,9 @@ def handleError(socket, clientAddress, tokens):
 	print "Error:"
 	print tokens
 	
-available_actions = {"A": receiveAlive,
-                     "S": receiveStatus,
-                     "E": handleError}
+available_actions = {MSG_ALIVE: receiveAlive,
+                     MSG_STATUS: receiveStatus,
+                     MSG_ERROR: handleError}
 		
 # def operateDoor():
 

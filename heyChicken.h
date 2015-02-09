@@ -39,6 +39,18 @@ enum DoorState {
   DOOR_CLOSING
 };
 
+// UDP message types
+enum MsgType {
+  MSG_ALIVE = 'A',
+  MSG_REQ_STATUS = 'R',
+  MSG_STATUS = 'S',
+  MSG_THRESHOLD = 'T',
+  MSG_DOOR = 'D',
+  MSG_HEAT = 'H',
+  MSG_ERROR = 'E',
+  MSG_NO_OP = 'N'
+}; 
+
 #define BUMPER_TRIGGERED   LOW
 #define BUMPER_CLEAR       HIGH 
 
