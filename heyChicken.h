@@ -18,20 +18,18 @@
 
 #define MAX_DS1820_SENSORS  2
 
-// sensor thresholds for action
-#define LIGHT_THRESHOLD       100
-#define PRESSURE_THRESHOLD    400
-#define TEMPF_HEATER_ON       20
-#define TEMPF_HEATER_OFF      40
-
 enum CoopChange {
   NO_CHANGE,
   CHANGED_OFF,
   CHANGED_ON
 };
 
-// for exponential moving average smoothing
-#define SMOOTHING_FACTOR      0.01
+enum ThresholdType {
+  LIGHT_THRESHOLD,
+  PRESSURE_THRESHOLD,
+  TEMP_HEATER_ON,
+  TEMP_HEATER_OFF
+};
 
 // door state machine
 enum DoorState {

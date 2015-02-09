@@ -27,6 +27,13 @@ OneWire ds(DS18S20_PIN);    // temp sensors on digital pin 2
 
 // pressure
 float pressureExpMovingAve = 0.0;
+float smoothingFactor = 0.01;
+
+// sensor thresholds for action
+int lightThreshold = 100;
+int pressureThreshold = 400;
+int tempHeaterOn_F = 20;
+int tempHeaterOff_F = 40;
 
 // door
 int doorState = DOOR_CLOSED;
@@ -119,12 +126,12 @@ boolean getTemp(int sensor, float *result)
 CoopChange checkHeater(float coopTemp)
 {
   CoopChange heaterChange = NO_CHANGE;
-  if (coopTemp < TEMPF_HEATER_ON && !powertailState) // if the coop is too cold and the heater is off, turn it on
+  if (coopTemp < tempHeaterOn_F && !powertailState) // if the coop is too cold and the heater is off, turn it on
   {
     setPowertail(HIGH);
     heaterChange = CHANGED_ON;
     Serial.println("Turning heater on...");
-  } else if (coopTemp > TEMPF_HEATER_OFF && powertailState) { // if the coop is too hot and the heater is on, turn it off
+  } else if (coopTemp > tempHeaterOn_F && powertailState) { // if the coop is too hot and the heater is on, turn it off
     setPowertail(LOW);
     heaterChange = CHANGED_OFF;
     Serial.println("Turning heater off...");
@@ -164,7 +171,7 @@ void updatePressureEMA(int newValue)
   {
     pressureExpMovingAve = float(newValue);
   } else {
-    pressureExpMovingAve = SMOOTHING_FACTOR * float(newValue) + ((1.0 - SMOOTHING_FACTOR) * pressureExpMovingAve);
+    pressureExpMovingAve = smoothingFactor * float(newValue) + ((1.0 - smoothingFactor) * pressureExpMovingAve);
   }
 }
 
@@ -255,7 +262,7 @@ boolean okToCloseDoor()
   getPressure(&pressure); 
   getLight(&light);
   
-  if (pressure > PRESSURE_THRESHOLD && light < LIGHT_THRESHOLD)
+  if (pressure > pressureThreshold && light < lightThreshold)
   {
     isOK = true;
     Serial.print("It is dark outside and the chickies are sleeping.\nLight: ");
@@ -285,7 +292,7 @@ boolean okToOpenDoor()
   
   getLight(&light);
   
-  if (light > LIGHT_THRESHOLD)
+  if (light > lightThreshold)
   {
     isOK = true;
     Serial.print("Looks like the sun is up! Light is ");
@@ -432,6 +439,33 @@ void readSensors(float *tempCoop, float *tempRun, int *light, int *pressure)
   Serial.print("heater: ");
   Serial.println(powertailState);
 }
+
+void setThreshold(int value, ThresholdType type)
+{
+  switch(type) {
+    case LIGHT_THRESHOLD:
+      lightThreshold = value;
+      break;
+    case PRESSURE_THRESHOLD:
+      pressureThreshold = value;
+      break;
+    case TEMP_HEATER_ON:
+      tempHeaterOn_F = value;
+      break;
+    case TEMP_HEATER_OFF:
+      tempHeaterOff_F = value;
+      break;   
+  }
+}
+
+void setSmoothingFactor(float value)
+{
+  if (0 < value < 1)
+  {
+    smoothingFactor = value;
+  }
+}
+
 void errorMessage(char *msg)
 {
   
