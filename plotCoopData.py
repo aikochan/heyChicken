@@ -10,6 +10,7 @@ from StringIO import StringIO
 import os
 import sys
 import datetime
+import copy
 
 timestampIndex = 0
 insideTempIndex = 1
@@ -19,6 +20,7 @@ pressureIndex = 4
 
 resistorDivisor = 10
 
+
 def squashValues(data):
 	for x in np.nditer(data, op_flags=['readwrite']):
 		x[...] = x / resistorDivisor
@@ -26,6 +28,16 @@ def squashValues(data):
 def cToF(data):
 	for x in np.nditer(data, op_flags=['readwrite']):
 		x[...] = (x * 9) / 5 + 32
+		
+def computeEMA(data):
+	expMovingAve = 0.0
+	smoothingFactor = 0.01
+	for x in np.nditer(data, op_flags=['readwrite']):
+		if (expMovingAve == 0.0):
+			expMovingAve = x
+		else:
+			expMovingAve = smoothingFactor * x + ((1 - smoothingFactor) * expMovingAve)
+		x[...] = expMovingAve	
 
 fileName = str(sys.argv[1])
 
@@ -39,9 +51,12 @@ yInsideTemp = dataArray[:,insideTempIndex]
 yOutsideTemp = dataArray[:,outsideTempIndex]
 yLight = dataArray[:,lightIndex]
 yPressure = dataArray[:,pressureIndex]
+#yPressureEMA = copy.deepcopy(yPressure)
 
 squashValues(yLight)
 squashValues(yPressure)
+squashValues(yPressureEMA)
+#computeEMA(yPressureEMA)
 cToF(yInsideTemp)
 cToF(yOutsideTemp)
 
@@ -60,11 +75,12 @@ ax1.set_title("Coop Status (" + fileName + ")")
 ax1.set_xlabel('time') 
 
 ax1.plot(fds, yPressure, 'g.', label='pressure')
+#ax1.plot(fds, yPressureEMA, 'y.', label='pressureEMA')
 ax1.plot(fds, yLight, 'm.', label='light')
 ax1.plot(fds, yInsideTemp, 'r-', label='coop temp (F)')
 ax1.plot(fds, yOutsideTemp, 'b-', label='run temp (F)')
 
-ax1.xaxis.set_major_locator(dates.HourLocator(byhour=range(0,24,2)))
+ax1.xaxis.set_major_locator(dates.HourLocator(byhour=range(0,24,1)))
 ax1.xaxis.set_major_formatter(hfmt)
 
 plt.xticks(rotation='vertical')

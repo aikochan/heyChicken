@@ -3,23 +3,29 @@
 import SocketServer
 import time
 
-dataGatheringMode = True
+DATA_GATHERING_MODE = True
+HEATER_STATUS_INDEX = 5
 
-SERVER_IPADDRESS = "10.0.1.10"
+SERVER_IPADDRESS = "10.0.1.16"
 UDP_PORT = 9999
+
+def checkHeater(heaterStatus)
+	
 	
 def receiveAlive(socket, clientAddress, tokens):
 	print "Requesting status message\n"
-	if (dataGatheringMode):
+	if (DATA_GATHERING_MODE):
 		socket.sendto("R", clientAddress)   # request status upon arduino starting up 
 
 def receiveStatus(socket, clientAddress, tokens):
 	print "Receiving status message\n"
 	print "Here's the status:"
 	print tokens 
-	fileHandle = open('coopData', 'a')
-	fileHandle.write("{} {}\n".format(int(time.time()), " ".join(tokens[1:-1])))
-	fileHandle.close()	
+	
+	if (DATA_GATHERING_MODE)
+		fileHandle = open('coopData', 'a')
+		fileHandle.write("{} {}\n".format(int(time.time()), " ".join(tokens[1:-1])))
+		fileHandle.close()	
 	
 def handleError(socket, clientAddress, tokens):
 	print "Error:"

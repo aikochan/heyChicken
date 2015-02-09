@@ -1,23 +1,12 @@
+#include "heyChicken.h"
 #include <WiFi.h>
 #include <WiFiUdp.h>
 #include "WiFiInfo.h"
 #include <SPI.h>
 #include <OneWire.h> 
 
-#define OPERATE_DOOR        false
 
-// pin assignments
-#define DS18S20_PIN         2     // temperature
-#define PHOTOCELL_PIN       A0
-#define PRESSURE_PIN        A2
-#define STBY_PIN            4     // motor standby
-#define PWMA_PIN            3     // motor speed control 
-#define AIN1_PIN            9     // motor direction
-#define AIN2_PIN            8     // motor direction
-#define BUMP_OPEN_PIN       A4 
-#define BUMP_CLOSE_PIN      A5
-#define POWERTAIL_PIN       6
-
+#if TALK_TO_SERVER
 // wifi
 char ssid[] = WIFI_NETWORK;    // network SSID (name) 
 char pwd[] = WIFI_PASSWORD;    // network password
@@ -29,50 +18,25 @@ const int UDP_PACKET_SIZE = 48;
 byte packetBuffer[ UDP_PACKET_SIZE];    //buffer to hold incoming and outgoing packets
 WiFiUDP Udp;
 char currentRequest = 'N';
+#endif
 
 // temp 
-#define MAX_DS1820_SENSORS  2
-
 boolean foundAllDevices = false;
 byte addr[MAX_DS1820_SENSORS][8];
-
 OneWire ds(DS18S20_PIN);    // temp sensors on digital pin 2
 
-// sensor thresholds for action
-#define LIGHT_THRESHOLD       100
-#define PRESSURE_THRESHOLD    400
-#define TEMPF_HEATER_ON       20
-#define TEMPF_HEATER_OFF      40
+// pressure
+float pressureExpMovingAve = 0.0;
 
-// door state machine
-#define DOOR_OPEN          0
-#define DOOR_CLOSED        1
-#define DOOR_OPENING       2
-#define DOOR_CLOSING       3
-
+// door
 int doorState = DOOR_CLOSED;
-
-// door stop bumpers
-#define BUMPER_TRIGGERED   LOW
-#define BUMPER_CLEAR       HIGH 
-
 int openBumper = BUMPER_CLEAR;
 int closeBumper = BUMPER_CLEAR;
-
-#define MOTOR_SPEED       255  // go as fast as you can!
-// motor direction: swap these values if the door is going the wrong direction
-#define MOTOR_CLOSE_DOOR  0
-#define MOTOR_OPEN_DOOR   1
 
 // powertail
 int powertailState = LOW;    // off
 
-// loop intervals
-#define DOOR_IDLE_DELAY_MS        1000
-#define DOOR_MOVING_DELAY_MS      250
-#define PRINT_SENSORS_FREQ        5      // multiples of DOOR_IDLE_DELAY_MS
-#define IDLE_DELAY                5000
-
+// main loop count
 int loopCount = 0;
 
 ///////////    temperature sensors    ///////////
@@ -151,17 +115,21 @@ boolean getTemp(int sensor, float *result)
   return success;
 }
 
-
-void checkHeater(float coopTemp)
+// returns any change in heater state
+CoopChange checkHeater(float coopTemp)
 {
+  CoopChange heaterChange = NO_CHANGE;
   if (coopTemp < TEMPF_HEATER_ON && !powertailState) // if the coop is too cold and the heater is off, turn it on
   {
     setPowertail(HIGH);
+    heaterChange = CHANGED_ON;
     Serial.println("Turning heater on...");
   } else if (coopTemp > TEMPF_HEATER_OFF && powertailState) { // if the coop is too hot and the heater is on, turn it off
     setPowertail(LOW);
+    heaterChange = CHANGED_OFF;
     Serial.println("Turning heater off...");
   } 
+  return heaterChange;
 }
 
 float CtoF(float tempCelsius)
@@ -187,16 +155,31 @@ boolean isItSunset()
 }
 
 ///////////    pressure    ///////////
+// We are using an exponential moving average (EMA) to smooth our pressure readings.
+// EMAcur = sf x newValue + (1 - sf) x EMAprev
+// where sf is a smoothing factor between 0 and 1
+void updatePressureEMA(int newValue)
+{
+  if (0 == pressureExpMovingAve)
+  {
+    pressureExpMovingAve = float(newValue);
+  } else {
+    pressureExpMovingAve = SMOOTHING_FACTOR * float(newValue) + ((1.0 - SMOOTHING_FACTOR) * pressureExpMovingAve);
+  }
+}
 
 void getPressure(int *value)
 {
+  int valueRead = 0;
   // This second call to getPressure is used to disregard bad ananlogRead readings.
   // When mutliple analogRead calls are made in close temporal proximity, 
   // the first will affect the value of the second. 
-  *value = analogRead(PRESSURE_PIN);
-   delay(500);
-   *value = analogRead(PRESSURE_PIN);
-   delay(500);
+  valueRead = analogRead(PRESSURE_PIN);
+  delay(500);
+  valueRead = analogRead(PRESSURE_PIN);
+  delay(500);
+  updatePressureEMA(valueRead);
+  *value = int(round(pressureExpMovingAve));
 }
 
 boolean chickensOnRoost(int currentPressure)
@@ -275,7 +258,6 @@ boolean okToCloseDoor()
   if (pressure > PRESSURE_THRESHOLD && light < LIGHT_THRESHOLD)
   {
     isOK = true;
-    setPowertail(LOW);  // turn off the sun
     Serial.print("It is dark outside and the chickies are sleeping.\nLight: ");
     Serial.print(light);
     Serial.print("\tpressure: ");
@@ -306,7 +288,6 @@ boolean okToOpenDoor()
   if (light > LIGHT_THRESHOLD)
   {
     isOK = true;
-    setPowertail(HIGH);  // turn on the sun
     Serial.print("Looks like the sun is up! Light is ");
     Serial.println(light);
   }
@@ -323,6 +304,7 @@ void openTheDoor()
   move(MOTOR_SPEED, MOTOR_OPEN_DOOR);
 }
 
+#if TALK_TO_SERVER
 ///////////    wifi    ///////////
 
 void wifiSetup(void)
@@ -372,6 +354,56 @@ void printWifiStatus()
   Serial.println(" dBm");
 }
 
+void handleUDP(float tempCoop, float tempRun, int light, int pressure, CoopChange heaterChange)
+{
+  // read packet if present
+  if ( Udp.parsePacket() ) 
+  {
+    Serial.println("packet received");
+    Udp.read(packetBuffer, UDP_PACKET_SIZE); // read the packet into the buffer
+    Serial.println((char *)packetBuffer);
+    currentRequest = *(char *)packetBuffer;
+    Serial.println(currentRequest);
+  }
+
+  // send packet if needed
+  if (currentRequest != 'N')
+  {
+    switch (currentRequest)
+    {
+      case 'R':
+        Serial.println("Current request: status");
+        memset(packetBuffer, 0, UDP_PACKET_SIZE);  // clear packet data
+        // packet format: tempCoop | tempRun | light | pressure | heater on/off | heater changed
+        sprintf((char *)packetBuffer, "S %d %d %d %d %s %d ", int(round(tempCoop)), int(round(tempRun)), light, pressure, 
+                                                           (powertailState ? "on":"off"), heaterChange);
+        Serial.println((char *)packetBuffer);
+        break;
+    }
+    Udp.beginPacket(serverAddress, udpPort);
+    Udp.write(packetBuffer, UDP_PACKET_SIZE);
+    Udp.endPacket();
+    delay(1000);   // don't knw why this is here
+  }
+}
+#endif
+
+///////////    powertail    ///////////
+void powertailSetup()
+{
+  pinMode(POWERTAIL_PIN, OUTPUT);
+  setPowertail(LOW);  // make sure it is off
+  powertailState = LOW;
+}
+
+void setPowertail(int state)
+{
+  digitalWrite(POWERTAIL_PIN, state);
+  powertailState = state;
+}
+
+///////////    utility    ///////////
+
 void readSensors(float *tempCoop, float *tempRun, int *light, int *pressure)
 {
   getTemp(0, tempCoop);
@@ -400,54 +432,6 @@ void readSensors(float *tempCoop, float *tempRun, int *light, int *pressure)
   Serial.print("heater: ");
   Serial.println(powertailState);
 }
-
-void handleUDP(float *tempCoop, float *tempRun, int *light, int *pressure)
-{
-  // read packet if present
-  if ( Udp.parsePacket() ) 
-  {
-    Serial.println("packet received");
-    Udp.read(packetBuffer, UDP_PACKET_SIZE); // read the packet into the buffer
-    Serial.println((char *)packetBuffer);
-    currentRequest = *(char *)packetBuffer;
-    Serial.println(currentRequest);
-  }
-
-  // send packet if needed
-  if (currentRequest != 'N')
-  {
-    switch (currentRequest)
-    {
-      case 'R':
-        Serial.println("Current request: status");
-        memset(packetBuffer, 0, UDP_PACKET_SIZE);  // clear packet data
-        sprintf((char *)packetBuffer, "S %d %d %d %d %d", int(round(*tempCoop)), int(round(*tempRun)), *light, *pressure, powertailState);
-        Serial.print((char *)packetBuffer);
-        break;
-    }
-    Udp.beginPacket(serverAddress, udpPort);
-    Udp.write(packetBuffer, UDP_PACKET_SIZE);
-    Udp.endPacket();
-    delay(1000);   // don't knw why this is here
-  }
-}
-
-///////////    powertail    ///////////
-void powertailSetup()
-{
-  pinMode(POWERTAIL_PIN, OUTPUT);
-  setPowertail(LOW);  // make sure it is off
-  powertailState = LOW;
-}
-
-void setPowertail(int state)
-{
-  digitalWrite(POWERTAIL_PIN, state);
-  powertailState = state;
-}
-
-///////////    utility    ///////////
-
 void errorMessage(char *msg)
 {
   
@@ -472,7 +456,10 @@ void loop(void)
   float tempCoop = 0.0;
   float tempRun = 0.0;
   int light = 0;
-  int pressure = 0; 
+  int pressure = 0;
+  int originalPowertailState = powertailState;
+  CoopChange movement = NO_CHANGE;  
+  CoopChange heaterChanged = NO_CHANGE;
   
   // make sure temperature sensors are there
   // don't do this if the door is moving
@@ -486,6 +473,7 @@ void loop(void)
   }
 
 #if OPERATE_DOOR  
+  Serial.println("We are in the door code");
   switch (doorState)
   {
     // DOOR_OPENING/DOOR_CLOSING: door is moving, need to poll frequently for bumper
@@ -538,11 +526,12 @@ void loop(void)
       break;
   }
 #endif    // OPERATE_DOOR
-
   readSensors(&tempCoop, &tempRun, &light, &pressure);
-  checkHeater(tempCoop);
-  handleUDP(&tempCoop, &tempRun, &light, &pressure);
-  
+  heaterChanged = checkHeater(tempCoop);
+  //checkRoost(pressure);
+#if TALK_TO_SERVER
+  handleUDP(tempCoop, tempRun, light, pressure, heaterChanged);
+#endif
 #if !OPERATE_DOOR
   delay(IDLE_DELAY);
 #endif
