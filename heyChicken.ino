@@ -25,9 +25,13 @@ boolean foundAllDevices = false;
 byte addr[MAX_DS1820_SENSORS][8];
 OneWire ds(DS18S20_PIN);    // temp sensors on digital pin 2
 
+// light
+
 // pressure
 float pressureExpMovingAve = 0.0;
 float smoothingFactor = 0.01;
+int roostChangeCount = 0;    // consecutive loops of pressure readings crossing threshold
+boolean onRoost = false;
 
 // sensor thresholds for action
 int lightThreshold = 100;
@@ -162,6 +166,16 @@ boolean isItSunset()
 }
 
 ///////////    pressure    ///////////
+void pressureSetup()
+{
+  int currentPressure = 0;
+  getPressure(&currentPressure);
+  if (currentPressure > pressureThreshold)
+  {
+    onRoost = true;
+  }
+}
+
 // We are using an exponential moving average (EMA) to smooth our pressure readings.
 // EMAcur = sf x newValue + (1 - sf) x EMAprev
 // where sf is a smoothing factor between 0 and 1
@@ -191,7 +205,7 @@ void getPressure(int *value)
 
 boolean chickensOnRoost(int currentPressure)
 {
-  
+  roostChangeCount
 }
 
 ///////////    door    ///////////
@@ -373,27 +387,49 @@ void handleUDP(float tempCoop, float tempRun, int light, int pressure, CoopChang
     Serial.println(currentRequest);
   }
 
-  // send packet if needed
+  // process packet
   if (currentRequest != MSG_NO_OP)
   {
+    
     switch (currentRequest)
     {
       case MSG_REQ_STATUS:
-        Serial.println("Current request: status");
-        memset(packetBuffer, 0, UDP_PACKET_SIZE);  // clear packet data
         // packet format: tempCoop | tempRun | light | pressure | heater on/off | heater changed
-        sprintf((char *)packetBuffer, "S %d %d %d %d %s %d ", int(round(tempCoop)), int(round(tempRun)), light, pressure, 
+        memset(packetBuffer, 0, UDP_PACKET_SIZE);  // clear packet data
+        sprintf((char *)packetBuffer, "%c %d %d %d %d %s %d ", MSG_STATUS, int(round(tempCoop)), int(round(tempRun)), light, pressure, 
                                                            (powertailState ? "on":"off"), heaterChange);
-        Serial.println((char *)packetBuffer);
         break;
-      case MSG_THRESHOLD:
+      case MSG_REQ_TUNING:
+        // packet format: type | light | pressure | heater on | heater off | smoothing (as an integer 0-100)
+        memset(packetBuffer, 0, UDP_PACKET_SIZE);  // clear packet data
+        sprintf((char *)packetBuffer, "%c %d %d %d %d %d ", MSG_TUNING, lightThreshold, pressureThreshold, tempHeaterOn_F, tempHeaterOff_F, 
+                                                         int(smoothingFactor * 100));
+        break;
+      case MSG_SET_TUNING: 
+       int smoothingFactorInt = 0; 
+        // packet format: type | light | pressure | heater on | heater off | smoothing (as an integer 0-100)
+        sscanf((char *)packetBuffer, "%c %d %d %d %d %d", currentRequest, &lightThreshold, &pressureThreshold, &tempHeaterOn_F, &tempHeaterOff_F, 
+                                                         &smoothingFactorInt);
+        smoothingFactor = float(smoothingFactorInt/100.0);
+        // reply with new parameters
+        memset(packetBuffer, 0, UDP_PACKET_SIZE);  // clear packet data
+        sprintf((char *)packetBuffer, "%c %d %d %d %d %d ", MSG_TUNING, lightThreshold, pressureThreshold, tempHeaterOn_F, tempHeaterOff_F, 
+                                                            smoothingFactorInt);
         break;
     }
-    Udp.beginPacket(serverAddress, udpPort);
-    Udp.write(packetBuffer, UDP_PACKET_SIZE);
-    Udp.endPacket();
-    delay(1000);   // don't knw why this is here
+    sendUDPPacket();    // always reply with a message
   }
+  currentRequest = MSG_NO_OP;
+}
+
+void sendUDPPacket()
+{
+  Serial.print("Sending UDP packet: ");
+  Serial.println((char *)packetBuffer);
+  Udp.beginPacket(serverAddress, udpPort);
+  Udp.write(packetBuffer, UDP_PACKET_SIZE);
+  Udp.endPacket();
+  delay(1000);   // don't knw why this is here
 }
 #endif
 
@@ -442,7 +478,7 @@ void readSensors(float *tempCoop, float *tempRun, int *light, int *pressure)
   Serial.println(powertailState);
 }
 
-void setThreshold(int value, ThresholdType type)
+void setTunableParameter(int value, TunableParameter type)
 {
   switch(type) {
     case LIGHT_THRESHOLD:
@@ -456,16 +492,16 @@ void setThreshold(int value, ThresholdType type)
       break;
     case TEMP_HEATER_OFF:
       tempHeaterOff_F = value;
+      break;
+   case SMOOTHING_FACTOR:
+      if (0 < value < 1) smoothingFactor = value;
       break;   
   }
 }
 
 void setSmoothingFactor(float value)
 {
-  if (0 < value < 1)
-  {
-    smoothingFactor = value;
-  }
+  
 }
 
 void errorMessage(char *msg)

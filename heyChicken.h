@@ -24,11 +24,12 @@ enum CoopChange {
   CHANGED_ON
 };
 
-enum ThresholdType {
+enum TunableParameter {
   LIGHT_THRESHOLD,
   PRESSURE_THRESHOLD,
   TEMP_HEATER_ON,
-  TEMP_HEATER_OFF
+  TEMP_HEATER_OFF,
+  SMOOTHING_FACTOR
 };
 
 // door state machine
@@ -44,11 +45,14 @@ enum MsgType {
   MSG_ALIVE = 'A',
   MSG_REQ_STATUS = 'R',
   MSG_STATUS = 'S',
-  MSG_THRESHOLD = 'T',
+  MSG_REQ_TUNING = 'Q',
+  MSG_TUNING = 'T',
+  MSG_SET_TUNING = 'P',
   MSG_DOOR = 'D',
   MSG_HEAT = 'H',
   MSG_ERROR = 'E',
-  MSG_NO_OP = 'N'
+  MSG_NO_OP = 'N',
+  SHUTDOWN_PLEASE = 'Z'  // must reserve this for the server
 }; 
 
 #define BUMPER_TRIGGERED   LOW
@@ -65,5 +69,8 @@ enum MsgType {
 #define DOOR_MOVING_DELAY_MS      250
 #define PRINT_SENSORS_FREQ        5      // multiples of DOOR_IDLE_DELAY_MS
 #define IDLE_DELAY                5000
+#define MS_PER_MIN                60000
+#define ROOST_PERSISTENCE_MIN     5
+#define ROOST_PERSISTENCE_MULT    ROOST_PERSISTENCE_MIN*MS_PER_MIN/IDLE_DELAY    // multiples of IDLE_DELAY
 
 #endif /* _HEYCHICKEN_H */
