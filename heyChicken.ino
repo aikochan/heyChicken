@@ -205,7 +205,7 @@ void getPressure(int *value)
 
 boolean chickensOnRoost(int currentPressure)
 {
-  roostChangeCount
+  //roostChangeCount
 }
 
 ///////////    door    ///////////
