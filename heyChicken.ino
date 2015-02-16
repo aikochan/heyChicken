@@ -26,6 +26,7 @@ byte addr[MAX_DS1820_SENSORS][8];
 OneWire ds(DS18S20_PIN);    // temp sensors on digital pin 2
 
 // light
+boolean sunIsUp = false;
 
 // pressure
 float pressureExpMovingAve = 0.0;
@@ -148,37 +149,46 @@ float CtoF(float tempCelsius)
   return (tempCelsius * 9 / 5 + 32);
 }
 
-///////////    photocell    ///////////
+#pragma mark ---photocell-----
+
+void lightSetup()
+{
+  int currentLight = 0;
+  getLight(&currentLight);
+  sunIsUp = (currentLight > lightThreshold);
+}
+
+CoopChange checkLightChanged(int curValue)
+{
+  CoopChange changed = NO_CHANGE;
+  if ((!sunIsUp && (curValue > lightThreshold)) || (sunIsUp && (curValue <= lightThreshold)))
+  {
+    sunIsUp = !sunIsUp;
+    changed = (sunIsUp) ? CHANGED_ON : CHANGED_OFF;
+  } 
+  return changed;
+}
 
 void getLight(int *value)
 {
   *value = analogRead(PHOTOCELL_PIN);
 }
 
-boolean isItSunrise()
-{
-  
-}
-
-boolean isItSunset()
-{
-  
-}
-
 ///////////    pressure    ///////////
+ // when starting, one observation is sufficient to determine if the birds on are on the roost
 void pressureSetup()
 {
   int currentPressure = 0;
   getPressure(&currentPressure);
   if (currentPressure > pressureThreshold)
   {
-    onRoost = true;
+    onRoost = true; 
   }
 }
 
 // We are using an exponential moving average (EMA) to smooth our pressure readings.
-// EMAcur = sf x newValue + (1 - sf) x EMAprev
-// where sf is a smoothing factor between 0 and 1
+// EMAcur = factor x newValue + (1 - factor) x EMAprev
+// where factor is a smoothing factor between 0 and 1
 void updatePressureEMA(int newValue)
 {
   if (0 == pressureExpMovingAve)
@@ -203,9 +213,35 @@ void getPressure(int *value)
   *value = int(round(pressureExpMovingAve));
 }
 
-boolean chickensOnRoost(int currentPressure)
+// In order to detect a change, the roost pressure must pass the threshold for a given period of time
+/*CoopChange checkChickensOnRoost(int currentPressure)
 {
-  //roostChangeCount
+  CoopChange somethingChanged = NO_CHANGE;
+  if ((!onRoost && currentPressure > pressureThreshold) || (onRoost && currentPressure <= pressureThreshold))
+  {
+    roostChangeCount++;		// change detected
+  } else {
+    roostChangeCount = 0;	// if no change, the count starts over
+  }
+  if (roostChangeCount > ROOST_PERSISTENCE_MULT)		// change is persistent
+  {
+    onRoost = !onRoost;
+    somethingChanged = (onRoost) ? CHANGED_ON : CHANGED_OFF;
+    roostChangeCount = 0;
+  }
+  return somethingChanged;
+}*/
+
+// try this simple check first
+CoopChange checkChickensOnRoost(int currentPressure)
+{
+  CoopChange somethingChanged = NO_CHANGE;
+  if ((!onRoost && currentPressure > pressureThreshold) || (onRoost && currentPressure <= pressureThreshold))
+  {
+    onRoost = !onRoost;
+    somethingChanged = (onRoost) ? CHANGED_ON : CHANGED_OFF;
+  } 
+  return somethingChanged;
 }
 
 ///////////    door    ///////////
@@ -267,22 +303,15 @@ void stopTheDoor()
 }
 
 // It is ok to close if the chickens are on roost and it is dark outside
-boolean okToCloseDoor()
+boolean okToCloseDoor(boolean lightChanged, boolean roostChanged)
 {
   boolean isOK = false;
-  int pressure = 0;
-  int light = 0;
-  
-  getPressure(&pressure); 
-  getLight(&light);
-  
-  if (pressure > pressureThreshold && light < lightThreshold)
+
+  // might want to check pressure here too
+  if (CHANGED_OFF == lightChanged /* && CHANGED_ON == roostChanged */)
   {
     isOK = true;
-    Serial.print("It is dark outside and the chickies are sleeping.\nLight: ");
-    Serial.print(light);
-    Serial.print("\tpressure: ");
-    Serial.println(pressure);
+    Serial.println("It is dark outside and the chickies are sleeping.");
   }
   return isOK;
 }
@@ -375,7 +404,8 @@ void printWifiStatus()
   Serial.println(" dBm");
 }
 
-void handleUDP(float tempCoop, float tempRun, int light, int pressure, CoopChange heaterChange)
+void handleUDP(float tempCoop, float tempRun, int light, int pressure, CoopChange heaterChange, 
+               CoopChange lightChanged, CoopChange roostChanged)
 {
   // read packet if present
   if ( Udp.parsePacket() ) 
@@ -394,10 +424,11 @@ void handleUDP(float tempCoop, float tempRun, int light, int pressure, CoopChang
     switch (currentRequest)
     {
       case MSG_REQ_STATUS:
-        // packet format: tempCoop | tempRun | light | pressure | heater on/off | heater changed
+        // packet format: tempCoop | tempRun | light | pressure | heater on/off | heater changed |
+        //                light changed | roost changed
         memset(packetBuffer, 0, UDP_PACKET_SIZE);  // clear packet data
-        sprintf((char *)packetBuffer, "%c %d %d %d %d %s %d ", MSG_STATUS, int(round(tempCoop)), int(round(tempRun)), light, pressure, 
-                                                           (powertailState ? "on":"off"), heaterChange);
+        sprintf((char *)packetBuffer, "%c %d %d %d %d %s %d %d %d ", MSG_STATUS, int(round(tempCoop)), int(round(tempRun)), light, pressure, 
+                                                           (powertailState ? "on":"off"), heaterChange, lightChanged, roostChanged);
         break;
       case MSG_REQ_TUNING:
         // packet format: type | light | pressure | heater on | heater off | smoothing (as an integer 0-100)
@@ -451,8 +482,8 @@ void setPowertail(int state)
 
 void readSensors(float *tempCoop, float *tempRun, int *light, int *pressure)
 {
-  getTemp(0, tempCoop);
-  getTemp(1, tempRun);
+  getTemp(TEMP_COOP_INDEX, tempCoop);
+  getTemp(TEMP_RUN_INDEX, tempRun);
   getPressure(pressure);
   getLight(light);
   
@@ -532,6 +563,8 @@ void loop(void)
   int originalPowertailState = powertailState;
   CoopChange movement = NO_CHANGE;  
   CoopChange heaterChanged = NO_CHANGE;
+  CoopChange roostChanged = NO_CHANGE;
+  CoopChange lightChanged = NO_CHANGE;
   
   // make sure temperature sensors are there
   // don't do this if the door is moving
@@ -543,6 +576,11 @@ void loop(void)
       return;
     }
   }
+  
+  readSensors(&tempCoop, &tempRun, &light, &pressure);
+  heaterChanged = checkHeater(tempCoop);
+  roostChanged = checkChickensOnRoost(pressure);
+  lightChanged = checkLightChanged(light);
 
 #if OPERATE_DOOR  
   Serial.println("We are in the door code");
@@ -577,7 +615,7 @@ void loop(void)
      //  DOOR_OPEN/DOOR_CLOSED: Idle state, poll less frequently and take care of periodic tasks
     case DOOR_OPEN:
       // do we need to close the door?
-      if (okToCloseDoor())
+      if (okToCloseDoor(lightChanged, roostChanged))
       {
         closeTheDoor();
       } else {
@@ -588,7 +626,7 @@ void loop(void)
       
     case DOOR_CLOSED:
       // do we need to open the door?
-      if (okToOpenDoor())
+      if (okToOpenDoor(lightChanged))
       {
         openTheDoor();
       } else {
@@ -598,11 +636,8 @@ void loop(void)
       break;
   }
 #endif    // OPERATE_DOOR
-  readSensors(&tempCoop, &tempRun, &light, &pressure);
-  heaterChanged = checkHeater(tempCoop);
-  //checkRoost(pressure);
 #if TALK_TO_SERVER
-  handleUDP(tempCoop, tempRun, light, pressure, heaterChanged);
+  handleUDP(tempCoop, tempRun, light, pressure, heaterChanged, lightChanged, roostChanged);
 #endif
 #if !OPERATE_DOOR
   delay(IDLE_DELAY);

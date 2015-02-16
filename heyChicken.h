@@ -17,6 +17,8 @@
 #define POWERTAIL_PIN       6
 
 #define MAX_DS1820_SENSORS  2
+#define	TEMP_COOP_INDEX			0
+#define	TEMP_RUN_INDEX			1
 
 enum CoopChange {
   NO_CHANGE,
