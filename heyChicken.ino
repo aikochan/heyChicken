@@ -6,18 +6,27 @@
 #include <OneWire.h> 
 
 
-#if TALK_TO_SERVER
+#if USE_WEB_SERVER || USE_UDP
 // wifi
 char ssid[] = WIFI_NETWORK;    // network SSID (name) 
 char pwd[] = WIFI_PASSWORD;    // network password
 
 int status = WL_IDLE_STATUS;
+#endif
+
+#if USE_UDP
+// udp
 unsigned int udpPort = 9999;          // local port to listen for UDP packets
 IPAddress serverAddress(SERVER_IPV4_BYTE0, SERVER_IPV4_BYTE1, SERVER_IPV4_BYTE2, SERVER_IPV4_BYTE3);
 const int UDP_PACKET_SIZE = 48; 
 byte packetBuffer[ UDP_PACKET_SIZE];    //buffer to hold incoming and outgoing packets
 WiFiUDP Udp;
 char currentRequest = MSG_NO_OP;
+#endif
+
+#if USE_WEB_SERVER
+// web server
+WiFiServer server(80);
 #endif
 
 // temp 
@@ -354,9 +363,9 @@ void openTheDoor()
   move(MOTOR_SPEED, MOTOR_OPEN_DOOR);
 }
 
-#if TALK_TO_SERVER
-///////////    wifi    ///////////
+#pragma mark ---wifi---
 
+#if USE_WEB_SERVER || USE_UDP
 void wifiSetup(void)
 {
   if (WiFi.status() == WL_NO_SHIELD)
@@ -373,17 +382,11 @@ void wifiSetup(void)
     delay(10000);                    // wait 10 seconds for connection
   } 
   printWifiStatus();
-  
-  Serial.println("\nStarting connection to UDP server...");
-  Udp.begin(udpPort);
-  
-  // send "awake" message to server at startup
-  sprintf((char *)packetBuffer, "A \n");
-  Serial.println((char *)packetBuffer);
-  Udp.beginPacket(serverAddress, udpPort);
-  Udp.write(packetBuffer, UDP_PACKET_SIZE);
-  Udp.endPacket();
-  delay(1000);   // don't know why this is here
+#if USE_UDP
+  udpSetup();
+#else
+  server.begin();
+#endif
 }
 
 void printWifiStatus() 
@@ -404,6 +407,27 @@ void printWifiStatus()
   Serial.println(" dBm");
 }
 
+#endif     // USE_WEB_SERVER || USE_UDP
+
+#pragma mark ---UDP---
+
+#if USE_UDP
+void udpSetup()
+{
+  Serial.println("\nStarting connection to UDP server...");
+  Udp.begin(udpPort);
+  
+  // send "awake" message to server at startup
+  sendAliveMessage();
+}
+
+void sendAliveMessage()
+{
+  memset(packetBuffer, 0, UDP_PACKET_SIZE);  // clear packet data
+  sprintf((char *)packetBuffer, "A \n");
+  sendUDPPacket();
+}
+
 void handleUDP(float tempCoop, float tempRun, int light, int pressure, CoopChange heaterChange, 
                CoopChange lightChanged, CoopChange roostChanged)
 {
@@ -420,7 +444,6 @@ void handleUDP(float tempCoop, float tempRun, int light, int pressure, CoopChang
   // process packet
   if (currentRequest != MSG_NO_OP)
   {
-    
     switch (currentRequest)
     {
       case MSG_REQ_STATUS:
@@ -447,8 +470,12 @@ void handleUDP(float tempCoop, float tempRun, int light, int pressure, CoopChang
         sprintf((char *)packetBuffer, "%c %d %d %d %d %d ", MSG_TUNING, lightThreshold, pressureThreshold, tempHeaterOn_F, tempHeaterOff_F, 
                                                             smoothingFactorInt);
         break;
-    }
+    } 
     sendUDPPacket();    // always reply with a message
+  } else if (loopCount % PERIODIC_TASKS_FREQ == 0) {	// No message received this time so let's take care of periodic tasks
+  			// Send an alive "ping" to the server
+  			sendAliveMessage();
+  			loopCount = 0;
   }
   currentRequest = MSG_NO_OP;
 }
@@ -462,7 +489,156 @@ void sendUDPPacket()
   Udp.endPacket();
   delay(1000);   // don't knw why this is here
 }
-#endif
+#endif      // USE_UDP
+
+#pragma mark ---web server---
+
+#if USE_WEB_SERVER
+void handleWebRequest(float tempCoop, float tempRun, int light, int pressure)
+{
+  // listen for incoming clients
+  WiFiClient client = server.available();
+  if (client) 
+  {
+  	//String HTTP_req = "";
+    Serial.println("new client");
+    // an http request ends with a blank line
+    boolean currentLineIsBlank = true;
+    while (client.connected()) 
+    {
+      if (client.available()) 
+      {
+        char c = client.read();
+        //HTTP_req += c;
+        Serial.write(c);
+        // if you've gotten to the end of the line (received a newline
+        // character) and the line is blank, the http request has ended,
+        // so you can send a reply
+        if (c == '\n' && currentLineIsBlank) 
+        {
+        	//checkThresholdUpdate(HTTP_req);
+          // send a standard http response header
+          client.println("HTTP/1.1 200 OK");
+          client.println("Content-Type: text/html");
+          client.println("Connection: close");  // the connection will be closed after completion of the response
+          client.println("Refresh: 120");  // refresh the page automatically every 30 sec
+          client.println();
+          client.println("<!DOCTYPE HTML>");
+          client.println("<html><body>");
+          // body
+          client.println("<h1>Status</h1>");
+          client.println("    <table border=\"1\" cellpadding=\"3\">");
+          client.print("        <tr><th>Coop</th><td>");
+          client.print(int(tempCoop));
+          client.print("&deg F</td>");
+          printHeaterCell(client);
+          printRoostCell(client, pressure);
+          client.println("</tr>");
+          client.print("        <tr><th>Run</th><td>");
+          client.print(int(tempRun));
+          client.print("&deg F</td>");
+          printLightCell(client, light);
+          client.println("</tr>");
+          client.println("    </table>");
+          client.println("<h1>Threshold Tuning</h1>");
+          client.println("        <form method=\"get\">");
+          client.println("    <table>");
+          printInputForParameter(client, 1, lightThreshold);
+          printInputForParameter(client, 2, pressureThreshold);
+          printInputForParameter(client, 3, tempHeaterOn_F);
+          printInputForParameter(client, 4, tempHeaterOff_F);
+          client.println("    </table>");
+          client.println("        </form>");
+          client.println("</body></html>");
+          //HTTP_req = "";		// clear this guy for the next round
+          break;
+        }
+        if (c == '\n') 
+        {
+          // you're at the end of a line, reset for the next line
+          currentLineIsBlank = true;
+        }
+        else if (c != '\r') 
+        {
+          // you've gotten a character on the current line
+          currentLineIsBlank = false;
+        }
+      }
+    }
+    // give the web browser time to receive the data
+    delay(1);
+
+    // close the connection:
+    client.stop();
+    Serial.println("client disonnected");
+  }
+}
+
+void printInputForParameter(WiFiClient client, int field, int curValue)
+{
+	client.print("        <tr><th>field");
+	client.print(field);
+	client.print("</th><td><input type=\"text\" name=\"");
+	client.print(field);
+	client.print("_field\" value=\"");
+	client.print(curValue);
+	client.print("\">");
+	client.println("</td><td><input type=\"submit\" value=\"submit\"></td></tr>");
+}
+
+void checkThresholdUpdate(String http_req)
+{
+	if (http_req.substring(9) == "200 OK")
+	{
+
+	}
+
+}
+
+void printHeaterCell(WiFiClient client)
+{
+	client.print("<td bgcolor=\"");
+	if (HIGH == powertailState) 
+	{
+		client.print(BG_COLOR_ON);
+		client.print("\"> heater ON</td>");
+	} else {
+		client.print(BG_COLOR_OFF);
+		client.print("\"> heater OFF</td>");
+	}
+}
+
+void printRoostCell(WiFiClient client, int pressure)
+{
+	client.print("<td bgcolor=\"");
+	if (onRoost) 
+	{
+		client.print(BG_COLOR_ON);
+		client.print("\"> roost ON</td>");
+	} else {
+		client.print(BG_COLOR_OFF);
+		client.print("\"> roost OFF (");
+		client.print(pressure);
+		client.print(")</td>");
+	}
+}
+
+void printLightCell(WiFiClient client, int light)
+{
+	client.print("<td bgcolor=\"");
+	if (sunIsUp) 
+	{
+		client.print(BG_COLOR_DAY);
+		client.print("\"> day (");
+	} else {
+		client.print(BG_COLOR_NIGHT);
+		client.print("\"> night (");
+	}
+	client.print(light);
+	client.print(")</td>");
+}
+
+#endif  // USE_WEB_SERVER
 
 ///////////    powertail    ///////////
 void powertailSetup()
@@ -566,6 +742,8 @@ void loop(void)
   CoopChange roostChanged = NO_CHANGE;
   CoopChange lightChanged = NO_CHANGE;
   
+  loopCount++;
+  
   // make sure temperature sensors are there
   // don't do this if the door is moving
   if (doorState < 2 && !foundAllDevices)
@@ -636,12 +814,14 @@ void loop(void)
       break;
   }
 #endif    // OPERATE_DOOR
-#if TALK_TO_SERVER
+#if USE_UDP
   handleUDP(tempCoop, tempRun, light, pressure, heaterChanged, lightChanged, roostChanged);
+#endif
+#if USE_WEB_SERVER  
+  handleWebRequest(tempCoop, tempRun, light, pressure);
 #endif
 #if !OPERATE_DOOR
   delay(IDLE_DELAY);
 #endif
-
 }
 

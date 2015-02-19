@@ -2,7 +2,8 @@
 #define _HEYCHICKEN_H
 
 #define OPERATE_DOOR        false
-#define TALK_TO_SERVER      true
+#define USE_WEB_SERVER      true
+#define USE_UDP				false
 
 // pin assignments
 #define DS18S20_PIN         2     // temperature
@@ -69,10 +70,17 @@ enum MsgType {
 // loop intervals
 #define DOOR_IDLE_DELAY_MS        1000
 #define DOOR_MOVING_DELAY_MS      250
-#define PRINT_SENSORS_FREQ        5      // multiples of DOOR_IDLE_DELAY_MS
+#define PERIODIC_TASKS_FREQ       5      // multiples of DOOR_IDLE_DELAY_MS
 #define IDLE_DELAY                5000
 #define MS_PER_MIN                60000
 #define ROOST_PERSISTENCE_MIN     5
 #define ROOST_PERSISTENCE_MULT    ROOST_PERSISTENCE_MIN*MS_PER_MIN/IDLE_DELAY    // multiples of IDLE_DELAY
+
+#define BG_COLOR_ON 		"#FF9980"
+#define BG_COLOR_OFF 		"#E6E6E6"
+#define BG_COLOR_NIGHT 	"#6685A3"
+#define BG_COLOR_DAY 		"#FFDB4D"
+#define TEXT_COLOR_COOP "#308330"
+#define TEXT_COLOR_RUN 	"#996633"
 
 #endif /* _HEYCHICKEN_H */

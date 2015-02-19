@@ -4,7 +4,7 @@ import SocketServer
 import time
 import signal
 import sys
-from Queue import Queue
+from Queue import Queue 
 from threading import Thread, Timer
 
 # "constants"
@@ -28,6 +28,7 @@ MSG_NO_OP = 'N'
 SHUTDOWN_PLEASE = 'Z'
 
 STATUS_POLLING_INTERVAL = 5.0
+RECEIVE_MSG_TIMEOUT_SEC = 10
 
 # wish these were an enum that were forced to be sequential
 # then receiveTuning() would be less ugly
@@ -42,6 +43,7 @@ SMOOTHING_FACTOR = 5
 arduinoSocket = None
 arduinoAddress = None
 server = None
+timer = None
 receive_queue = Queue()
 job_queue = Queue()
 
@@ -60,8 +62,8 @@ def receiveStatus(socket, clientAddress, tokens):
 		fileHandle.write("{} {}\n".format(int(time.time()), " ".join(tokens[1:-1])))
 		fileHandle.close()
 		global job_queue
-		t = Timer(STATUS_POLLING_INTERVAL, requestStatus, [job_queue,]) # fire off another request for status
-		t.start()		
+		timer = Timer(STATUS_POLLING_INTERVAL, requestStatus, [job_queue,]) # reschedule
+		timer.start()		
 	
 def receiveTuning(socket, clientAddress, tokens):
 	global tuningParameters
@@ -77,9 +79,9 @@ def handleError(socket, clientAddress, tokens):
 	print tokens
 	
 available_actions = {MSG_ALIVE: receiveAlive,
-                     MSG_STATUS: receiveStatus,
-                     MSG_TUNING: receiveTuning,
-                     MSG_ERROR: handleError}
+					 MSG_STATUS: receiveStatus,
+					 MSG_TUNING: receiveTuning,
+					 MSG_ERROR: handleError}
 		
 # def operateDoor():
 
@@ -105,16 +107,16 @@ def setArduinoAddress(socket, address):
 # This handler puts received messages on the receive_queue
 # and in the case of alive messages, records the arduino network address		
 class MyUDPHandler(SocketServer.BaseRequestHandler):
-    def handle(self):
-    	# print "MyUDPHandler called"
-        data = self.request[0].strip()
-        if data:
-        	if data.split()[0] is MSG_ALIVE:
-        		setArduinoAddress(self.request[1], self.client_address)
-        	global receive_queue
-        	receive_queue.put(data)
-        	receive_queue.task_done()
-        	
+	def handle(self):
+		# print "MyUDPHandler called"
+		data = self.request[0].strip()
+		if data:
+			if data.split()[0] is MSG_ALIVE:
+				setArduinoAddress(self.request[1], self.client_address)
+			global receive_queue
+			receive_queue.put(data)
+			receive_queue.task_done()
+			
 def sendUDPMessage(msg):
 	# print "sendUDPMessage: " + msg
 	global arduinoSocket
@@ -133,26 +135,35 @@ def processJobs(jobQueue, receiveQueue):
 		if outgoingMsg is not MSG_ALIVE:
 			sendUDPMessage(outgoingMsg)
 		# else: we don't know the Arduino's address yet, wait for incoming msg
-		incomingMsg = receiveQueue.get()	# blocking
-		# print "Worker thread: processing incoming msg: " + incomingMsg
-		global arduinoSocket
-		global arduinoAddress
-		processMessage(arduinoSocket, arduinoAddress, incomingMsg)
-		jobQueue.task_done()	
+		try:
+			incomingMsg = receiveQueue.get(True, RECEIVE_MSG_TIMEOUT_SEC)
+			# print "Worker thread: processing incoming msg: " + incomingMsg
+			global arduinoSocket
+			global arduinoAddress
+			processMessage(arduinoSocket, arduinoAddress, incomingMsg)
+		except:
+			# the arduino is unresponsive. Assume it needs to be rebooted
+			print "The arduino is unresponsive. Waiting for it to be rebooted..."
+			# start over fresh
+			timer.cancel()
+			while not job_queue.empty():
+				job_queue.get()
+			job_queue.put(MSG_ALIVE) 
+		jobQueue.task_done()	# always signal done
 
 def startServer(server):
-	print "Starting UDP server"    
+	print "Starting UDP server"	   
 	server.serve_forever()
-    
+	
 def requestStatus(jobQueue):
 	jobQueue.put(MSG_REQ_STATUS)
 	
 def signalHandler(signal, frame):
-    print "\n******** Received SIGINT *************"
-    receive_queue.join()
-    job_queue.join()
-    server.shutdown()
-    sys.exit(0)
+	print "\n******** Received SIGINT *************"
+	receive_queue.join()
+	job_queue.join()
+	server.shutdown()
+	sys.exit(0)
 	
 #  There are 3 threads in this script:
 #  1) main thread to accept tuning requests from user
@@ -167,7 +178,7 @@ if __name__ == "__main__":
 	server = SocketServer.UDPServer((HOST, PORT), MyUDPHandler)
 	
 	job_queue.put(MSG_ALIVE)	# gotta get the arduino address before sending UDP msgs
-
+	
 	# start the UDP server thread
 	serverThread = Thread(target=startServer, args=(server,))
 	serverThread.setDaemon(True)
@@ -180,8 +191,8 @@ if __name__ == "__main__":
 
 	# start a timer to begin request status loop
 	if DATA_GATHERING_MODE:
-		t = Timer(STATUS_POLLING_INTERVAL, requestStatus, [job_queue,])
-		t.start()
+		timer = Timer(STATUS_POLLING_INTERVAL, requestStatus, [job_queue,])
+		timer.start()
 
 	# user parameter tuning
 	# get current parameter values
@@ -189,7 +200,7 @@ if __name__ == "__main__":
 		job_queue.join()			# make sure the tuning params are updated before continuing
 	while True:
 		print("*******************************************************")
-		print("*                 Tunable parameters                  *")
+		print("*				 Tunable parameters					 *")
 		print("*******************************************************")
 		print("\tCode\tParameter\tRange\t\tValue") 
 		print("-------------------------------------------------------")
@@ -201,7 +212,7 @@ if __name__ == "__main__":
 		print("*******************************************************\n")
 	
 		parameterType = int(input('Enter the code for the parameter to tune: '))
-		parameterValue = int(input('Enter the new value: ')	)	
+		parameterValue = int(input('Enter the new value: ') )	
 		tuningParameters[parameterType] = parameterValue	# no error checking
 		print "Transmitting..."
 	
