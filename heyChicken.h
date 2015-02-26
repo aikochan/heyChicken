@@ -2,8 +2,7 @@
 #define _HEYCHICKEN_H
 
 #define OPERATE_DOOR        false
-#define USE_WEB_SERVER      true
-#define USE_UDP				false
+#define USE_UDP							true
 
 // pin assignments
 #define DS18S20_PIN         2     // temperature
