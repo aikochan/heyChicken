@@ -10,8 +10,6 @@ import socket
 from socket import AF_INET, SOCK_DGRAM
 
 # "constants"
-HEATER_STATUS_INDEX = 5
-
 ARDUINO_IPADDRESS = "10.0.1.6"
 UDP_PORT = 9999
 UDP_PACKET_SIZE = 48
@@ -26,20 +24,27 @@ MSG_DOOR = 'D'
 MSG_HEAT = 'H'
 MSG_ERROR = 'E'
 MSG_NO_OP = 'N'
-
 SHUTDOWN_PLEASE = 'Z'
 
-STATUS_POLLING_INTERVAL = 15.0
-UDP_MSG_TIMEOUT_SEC = 20
+# timing
+STATUS_POLLING_INTERVAL = 30.0
+UDP_MSG_TIMEOUT_SEC = 60
 
-# wish these were an enum that were forced to be sequential
-# then receiveTuning() would be less ugly
-# indices for thresholds
+# tuning
+tuning_parameters = None
 LIGHT_THRESHOLD = 1
 PRESSURE_THRESHOLD = 2
 TEMP_HEATER_ON = 3
 TEMP_HEATER_OFF = 4
 SMOOTHING_FACTOR = 5
+
+# status
+status_vars = None
+TEMP_COOP = 0
+TEMP_RUN = 1
+LIGHT = 2
+PRESSURE = 3
+HEATER_STATUS = 4
 
 # globals
 timer = None
@@ -47,28 +52,9 @@ lets_shutdown = False
 udp_lock = None
 status_lock = None
 
-# indices for status vars
-TEMP_COOP = 0
-TEMP_RUN = 1
-LIGHT = 2
-PRESSURE = 3
-HEATER_STATUS = 4
-
-# shared global status variables
-status_vars = None
-
-# for reading and setting tuning values
-tuning_parameters = None
-
 def signal_handler(signal, frame):
 	print "\n******** Received SIGINT *************"
 	sys.exit(0)
-
-# def operate_door():
-
-# def operate_heat():
-
-#def check_heater(heaterStatus):
 
 def send_udp_message(msg, client_socket):
 	global udp_lock
