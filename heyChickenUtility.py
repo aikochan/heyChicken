@@ -51,6 +51,9 @@ timer = None
 lets_shutdown = False
 udp_lock = None
 status_lock = None
+data_gathering = True
+tweeting = False
+
 
 def signal_handler(signal, frame):
 	print "\n******** Received SIGINT *************"
@@ -72,7 +75,7 @@ def send_udp_message(msg, client_socket):
 	return reply		 
 
 def receive_status(tokens):
-	global status_lock, status_vars
+	global status_lock, status_vars, data_gathering
 	with status_lock:
 		status_vars = tokens[1:-1]
 	if data_gathering:
@@ -137,11 +140,15 @@ def tune_parameters(client_socket):
 		print "\nArduino not responding with parameters."
 		
 def toggle_data_gathering(client_socket):
-	print "toggle_data_gathering"
+	global data_gathering
+	data_gathering = not data_gathering	
+	print "\n...data gathering now {action}...\n".format(action = "ON" if data_gathering else "OFF")
 	
 def toggle_tweeting(client_socket):
-	print "toggle_tweeting"
-
+	global tweeting
+	tweeting = not tweeting	
+	print "\n...tweeting now {action}...\n".format(action = "ON" if tweeting else "OFF")
+	
 def shutdown(client_socket):
 	print "\n\nShutting down..."
 	global timer, lets_shutdown
@@ -157,6 +164,7 @@ menu_options = {1: print_status,
 					 			5: shutdown}
 	
 def main_menu():
+	global data_gathering, tweeting
 	print "\nMain Menu:"
 	print "1: Print status"
 	print "2: Tune parameters"
@@ -167,8 +175,6 @@ def main_menu():
 if __name__ == "__main__":
 
 	client_socket = None
-	data_gathering = True
-	tweeting = False
 	
 	print "\n*** Hey! Chicken! Utility! ***"
 
