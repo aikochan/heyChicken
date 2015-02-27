@@ -45,6 +45,7 @@ TEMP_RUN = 1
 LIGHT = 2
 PRESSURE = 3
 HEATER_STATUS = 4
+TIMESTAMP = 8
 
 # globals
 timer = None
@@ -78,6 +79,7 @@ def receive_status(tokens):
 	global status_lock, status_vars, data_gathering
 	with status_lock:
 		status_vars = tokens[1:-1]
+		status_vars.append(time.ctime())
 	if data_gathering:
 		fileHandle = open('coopData', 'a')
 		fileHandle.write("{} {}\n".format(int(time.time()), " ".join(tokens[1:-1])))
@@ -102,7 +104,8 @@ def print_status(client_socket):
 	if status_vars is not None:
 		global status_lock
 		with status_lock:
-			print "\n\n**************************************"
+			print "\n\n", status_vars[TIMESTAMP]
+			print "**************************************"
 			print "Coop"
 			print "{} °F\theat {}\troost ({})".format(status_vars[TEMP_COOP], status_vars[HEATER_STATUS], status_vars[PRESSURE])
 			print "\nRun"
