@@ -54,6 +54,7 @@ status_lock = None
 
 def signal_handler(signal, frame):
 	print "\n******** Received SIGINT *************"
+	shutdown(None)
 	sys.exit(0)
 
 def send_udp_message(msg, client_socket):
