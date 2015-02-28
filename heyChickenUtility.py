@@ -45,7 +45,9 @@ TEMP_RUN = 1
 LIGHT = 2
 PRESSURE = 3
 HEATER_STATUS = 4
-TIMESTAMP = 8
+DAY_NIGHT = 5
+ROOST_STATUS = 6
+TIMESTAMP = 7
 
 # globals
 timer = None
@@ -107,9 +109,9 @@ def print_status(client_socket):
 			print "\n\n", status_vars[TIMESTAMP]
 			print "**************************************"
 			print "Coop"
-			print "{} °F\theat {}\troost ({})".format(status_vars[TEMP_COOP], status_vars[HEATER_STATUS], status_vars[PRESSURE])
+			print "{} °F\theat {}\troost {} ({})".format(status_vars[TEMP_COOP], "ON" if int(status_vars[HEATER_STATUS]) else "OFF", "ON" if int(status_vars[ROOST_STATUS]) else "OFF", status_vars[PRESSURE])
 			print "\nRun"
-			print "{} °F\tlight ({})".format(status_vars[TEMP_RUN], status_vars[LIGHT])
+			print "{} °F\t{} ({})".format(status_vars[TEMP_RUN], "day" if int(status_vars[DAY_NIGHT]) else "night", status_vars[LIGHT])
 			print "**************************************\n"
 	else:
 		print "\nNo status retrieved from Arduino yet."

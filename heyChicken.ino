@@ -426,8 +426,7 @@ void sendAliveMessage()
   sendUDPPacket();
 }
 
-void handleUDP(float tempCoop, float tempRun, int light, int pressure, CoopChange heaterChange, 
-               CoopChange lightChanged, CoopChange roostChanged)
+void handleUDP(float tempCoop, float tempRun, int light, int pressure)
 {
   // read packet if present
   if ( Udp.parsePacket() ) 
@@ -451,10 +450,9 @@ void handleUDP(float tempCoop, float tempRun, int light, int pressure, CoopChang
     switch (currentRequest)
     {
       case MSG_REQ_STATUS:
-        // packet format: tempCoop | tempRun | light | pressure | heater on/off | heater changed |
-        //                light changed | roost changed
-        sprintf(replyBuffer, "%c %d %d %d %d %s %d %d %d ", MSG_STATUS, int(round(tempCoop)), int(round(tempRun)), light, pressure, 
-                                                           (powertailState ? "on":"off"), heaterChange, lightChanged, roostChanged);
+        // packet format: tempCoop | tempRun | light | pressure | heater on/off | day/night | on/off roost
+        sprintf(replyBuffer, "%c %d %d %d %d %d %d %d ", MSG_STATUS, int(round(tempCoop)), int(round(tempRun)), light, pressure, 
+                                                        int(powertailState), int(sunIsUp), int(onRoost));
         break;
       case MSG_REQ_TUNING:
         // packet format: type | light | pressure | heater on | heater off | smoothing (as an integer 0-100)
@@ -595,7 +593,7 @@ void loop(void)
   int pressure = 0;
   int originalPowertailState = powertailState;
   CoopChange movement = NO_CHANGE;  
-  CoopChange heaterChanged = NO_CHANGE;
+  CoopChange heaterChanged = NO_CHANGE;	// not doing anything with the changed variables yet
   CoopChange roostChanged = NO_CHANGE;
   CoopChange lightChanged = NO_CHANGE;
   
@@ -613,7 +611,7 @@ void loop(void)
   }
   
   readSensors(&tempCoop, &tempRun, &light, &pressure);
-  heaterChanged = checkHeater(tempCoop);
+  heaterChanged = checkHeater(tempCoop);		// This will turn the heater on/off
   roostChanged = checkChickensOnRoost(pressure);
   lightChanged = checkLightChanged(light);
 
@@ -672,7 +670,7 @@ void loop(void)
   }
 #endif    // OPERATE_DOOR
 #if USE_UDP
-  handleUDP(tempCoop, tempRun, light, pressure, heaterChanged, lightChanged, roostChanged);
+  handleUDP(tempCoop, tempRun, light, pressure);
 #endif
 #if !OPERATE_DOOR
   delay(IDLE_DELAY);
