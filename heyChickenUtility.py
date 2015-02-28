@@ -63,18 +63,27 @@ def signal_handler(signal, frame):
 	shutdown(None)
 	sys.exit(0)
 
+def log_error(msg):
+	if msg is not None:
+		fileHandle = open('coopErrors', 'a')
+		fileHandle.write("{}\t{}\n".format(time.ctime(), msg))
+		fileHandle.close()
+		print "\n{}".format(msg)
+	
 def send_udp_message(msg, client_socket):
 	global udp_lock
 	reply = None
+	error = None
 	with udp_lock:
 		bytes_sent = client_socket.sendto(msg, (ARDUINO_IPADDRESS, UDP_PORT))
 		if bytes_sent:
 			try:
 				reply, server_address_info = client_socket.recvfrom(1024)
 			except socket.timeout:
-				print "\nError: UDP receive timeout in send_udp_message"
+				error = "UDP receive timeout in send_udp_message"
 		else:
-			print "\nError: UDP sendto timeout in send_udp_message"
+			error = "UDP sendto timeout in send_udp_message"
+	log_error(error)
 	return reply		 
 
 def receive_status(tokens):
@@ -140,9 +149,9 @@ def tune_parameters(client_socket):
 			parameters = incoming_msg.split()
 			print_parameters(parameters)
 		else:
-			print "\nArduino not responding with parameters."		
+			log_error("Arduino not responding with parameters")	
 	else:
-		print "\nArduino not responding with parameters."
+		log_error("Arduino not responding with parameters")
 		
 def toggle_data_gathering(client_socket):
 	global data_gathering
@@ -181,8 +190,8 @@ if __name__ == "__main__":
 
 	client_socket = None
 	
-	print "\n*** Hey! Chicken! Utility! ***"
-
+	log_error("*** Hey! Chicken! Utility! ***")
+	
 	signal.signal(signal.SIGINT, signal_handler)
 	
 	udp_lock = Lock()
