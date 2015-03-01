@@ -29,9 +29,9 @@ SHUTDOWN_PLEASE = 'Z'
 # timing
 UDP_MSG_TIMEOUT_SEC = 60
 STATUS_POLLING_INTERVAL = 300.0		# 5 minutes
-STATUS_RETRIES = 1
+STATUS_RETRIES = 3
 TUNING_RETRIES = 3
-RETRY_DELAY_SEC = 120
+RETRY_DELAY_SEC = 30
 
 
 # tuning
@@ -72,40 +72,24 @@ def log_error(msg):
 		fileHandle = open('coopErrors', 'a')
 		fileHandle.write("{}\t{}\n".format(time.ctime(), msg))
 		fileHandle.close()
-		print "\n{}".format(msg)
-		
-def send_datagram(msg, client_socket, retries):
+		# print "\n{}".format(msg)
+
+# returns true on success, otherwise false		
+def send_datagram(msg, client_socket):
 	success = True
 	bytes_sent = client_socket.sendto(msg, (ARDUINO_IPADDRESS, UDP_PORT))
-	print "bytes_sent: ", bytes_sent
 	if bytes_sent < len(msg):
-		for i in range(retries):
-			print "\n...retry {}...".format(i)
-			time.sleep(RETRY_DELAY_SEC)
-			bytes_sent = client_socket.sendto(msg, (ARDUINO_IPADDRESS, UDP_PORT))
-			if bytes_sent:
-				print "...success!..."
-				break
-	if bytes_sent < 1:
 		log_error("UDP sendto failed in send_datagram, bytes_sent: {}".format(bytes_sent))
 		success = False	
 	return success
-	
-def receive_datagram(client_socket, retries):
+
+# returns reply on success, None on failure
+def receive_datagram(client_socket):
 	reply = None
 	try:
 		reply, server_address_info = client_socket.recvfrom(UDP_PACKET_SIZE)
 	except socket.timeout:
-		for i in range(retries):
-			print "\n...retry {}...".format(i)
-			time.sleep(RETRY_DELAY_SEC)
-			try:
-				reply, server_address_info = client_socket.recvfrom(UDP_PACKET_SIZE)
-			except socket.timeout:
-				reply = None		# redundant just in case
-			if reply is not None:
-				print "...success!..."
-				break				
+		reply = None		# redundant just in case
 	if reply is None:
 		log_error("UDP recvfrom failed in receive_datagram")
 	return reply
@@ -113,9 +97,20 @@ def receive_datagram(client_socket, retries):
 def send_message(msg, client_socket, retries):
 	global udp_lock
 	reply = None
+	send_result = False
 	with udp_lock:
-		if send_datagram(msg, client_socket, retries):
-			reply = receive_datagram(client_socket, retries)
+		send_result = send_datagram(msg, client_socket)
+		if  send_result:
+			reply = receive_datagram(client_socket)
+		while retries and (not send_result or reply is None):
+			print "\n...send_message retry countdown {}...".format(retries)
+			time.sleep(RETRY_DELAY_SEC)
+			send_result = send_datagram(msg, client_socket)
+			if  send_result:
+				reply = receive_datagram(client_socket)
+			retries -= 1
+	if reply is None:
+		log_error("send_message failed after retries!")
 	return reply		 
 
 def receive_status(tokens):
