@@ -27,8 +27,12 @@ MSG_NO_OP = 'N'
 SHUTDOWN_PLEASE = 'Z'
 
 # timing
-STATUS_POLLING_INTERVAL = 30.0
 UDP_MSG_TIMEOUT_SEC = 60
+STATUS_POLLING_INTERVAL = 300.0		# 5 minutes
+STATUS_RETRIES = 1
+TUNING_RETRIES = 3
+RETRY_DELAY_SEC = 120
+
 
 # tuning
 tuning_parameters = None
@@ -69,25 +73,53 @@ def log_error(msg):
 		fileHandle.write("{}\t{}\n".format(time.ctime(), msg))
 		fileHandle.close()
 		print "\n{}".format(msg)
+		
+def send_datagram(msg, client_socket, retries):
+	success = True
+	bytes_sent = client_socket.sendto(msg, (ARDUINO_IPADDRESS, UDP_PORT))
+	print "bytes_sent: ", bytes_sent
+	if bytes_sent < len(msg):
+		for i in range(retries):
+			print "\n...retry {}...".format(i)
+			time.sleep(RETRY_DELAY_SEC)
+			bytes_sent = client_socket.sendto(msg, (ARDUINO_IPADDRESS, UDP_PORT))
+			if bytes_sent:
+				print "...success!..."
+				break
+	if bytes_sent < 1:
+		log_error("UDP sendto failed in send_datagram, bytes_sent: {}".format(bytes_sent))
+		success = False	
+	return success
 	
-def send_udp_message(msg, client_socket):
+def receive_datagram(client_socket, retries):
+	reply = None
+	try:
+		reply, server_address_info = client_socket.recvfrom(UDP_PACKET_SIZE)
+	except socket.timeout:
+		for i in range(retries):
+			print "\n...retry {}...".format(i)
+			time.sleep(RETRY_DELAY_SEC)
+			try:
+				reply, server_address_info = client_socket.recvfrom(UDP_PACKET_SIZE)
+			except socket.timeout:
+				reply = None		# redundant just in case
+			if reply is not None:
+				print "...success!..."
+				break				
+	if reply is None:
+		log_error("UDP recvfrom failed in receive_datagram")
+	return reply
+	
+def send_message(msg, client_socket, retries):
 	global udp_lock
 	reply = None
-	error = None
 	with udp_lock:
-		bytes_sent = client_socket.sendto(msg, (ARDUINO_IPADDRESS, UDP_PORT))
-		if bytes_sent:
-			try:
-				reply, server_address_info = client_socket.recvfrom(1024)
-			except socket.timeout:
-				error = "UDP receive timeout in send_udp_message"
-		else:
-			error = "UDP sendto timeout in send_udp_message"
-	log_error(error)
+		if send_datagram(msg, client_socket, retries):
+			reply = receive_datagram(client_socket, retries)
 	return reply		 
 
 def receive_status(tokens):
-	global status_lock, status_vars, data_gathering
+	global status_lock, status_vars
 	with status_lock:
 		status_vars = tokens[1:-1]
 		status_vars.append(time.ctime())
@@ -99,7 +131,7 @@ def receive_status(tokens):
 def request_status(client_socket):
 	# print "current thread: ", threading.current_thread()
 	# print "thread active count: ", threading.active_count()
-	incoming_msg = send_udp_message(MSG_REQ_STATUS, client_socket)
+	incoming_msg = send_message(MSG_REQ_STATUS, client_socket, STATUS_RETRIES)
 	if incoming_msg is not None:
 		tokens = incoming_msg.split()
 		if tokens:
@@ -135,7 +167,7 @@ def print_parameters(parameters):
 	
 def tune_parameters(client_socket):
 	print "\n...fetching current parameters...\n"
-	incoming_msg = send_udp_message(MSG_REQ_TUNING, client_socket)
+	incoming_msg = send_message(MSG_REQ_TUNING, client_socket, TUNING_RETRIES)
 	if incoming_msg is not None:
 		parameters = incoming_msg.split()
 		print_parameters(parameters)
@@ -144,7 +176,7 @@ def tune_parameters(client_socket):
 		print "\n...transmitting...\n"	
 		parameters[parameterType] = parameterValue;
 		message = "%c %s %s %s %s %s " % (MSG_SET_TUNING, parameters[LIGHT_THRESHOLD], parameters[PRESSURE_THRESHOLD], parameters[TEMP_HEATER_ON], parameters[TEMP_HEATER_OFF], parameters[SMOOTHING_FACTOR])
-		incoming_msg = send_udp_message(message, client_socket)
+		incoming_msg = send_message(message, client_socket, TUNING_RETRIES)
 		if incoming_msg is not None:
 			parameters = incoming_msg.split()
 			print_parameters(parameters)
@@ -169,6 +201,7 @@ def shutdown(client_socket):
 	lets_shutdown = True
 	timer.cancel()
 	timer.join()
+	client_socket.close()
 	sys.exit(0)
 	
 menu_options = {1: print_status,
