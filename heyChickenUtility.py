@@ -8,6 +8,8 @@ import threading
 from threading import Thread, Timer, Lock
 import socket
 from socket import AF_INET, SOCK_DGRAM
+import tweepy
+import twitterKeys	# defines CONSUMER_KEY, CONSUMER_SECRET, ACCESS_KEY, and ACCESS_SECRET
 
 # "constants"
 ARDUINO_IPADDRESS = "10.0.1.6"
@@ -32,7 +34,6 @@ STATUS_POLLING_INTERVAL = 300.0		# 5 minutes
 STATUS_RETRIES = 3
 TUNING_RETRIES = 3
 RETRY_DELAY_SEC = 30
-
 
 # tuning
 tuning_parameters = None
@@ -60,7 +61,7 @@ udp_lock = None
 status_lock = None
 data_gathering = True
 tweeting = False
-
+tweepy_api = None
 
 def signal_handler(signal, frame):
 	print "\n******** Received SIGINT *************"
@@ -73,6 +74,14 @@ def log_error(msg):
 		fileHandle.write("{}\t{}\n".format(time.ctime(), msg))
 		fileHandle.close()
 		# print "\n{}".format(msg)
+
+def send_user_msg(msg):
+	global tweepy_api
+	if tweepy_api is  None:
+		auth = tweepy.OAuthHandler(twitterKeys.CONSUMER_KEY, twitterKeys.CONSUMER_SECRET)
+		auth.set_access_token(twitterKeys.ACCESS_KEY, twitterKeys.ACCESS_SECRET)
+		tweepy_api = tweepy.API(auth)
+	tweepy_api.update_status(status=msg)
 
 # returns true on success, otherwise false		
 def send_datagram(msg, client_socket):
@@ -221,13 +230,15 @@ if __name__ == "__main__":
 	log_error("*** Hey! Chicken! Utility! ***")
 	
 	signal.signal(signal.SIGINT, signal_handler)
-	
+		
 	udp_lock = Lock()
 	status_lock = Lock()
 	
 	# setup the socket
 	client_socket = socket.socket(AF_INET, SOCK_DGRAM)
 	client_socket.settimeout(UDP_MSG_TIMEOUT_SEC)
+	
+	#send_user_msg("Testing!")
 		
 	# start a timer to begin request status loop
 	if data_gathering:
