@@ -141,7 +141,7 @@ CoopChange checkHeater(float coopTemp)
     setPowertail(HIGH);
     heaterChange = CHANGED_ON;
     Serial.println("Turning heater on...");
-  } else if (coopTemp > tempHeaterOn_F && powertailState) { // if the coop is too hot and the heater is on, turn it off
+  } else if (coopTemp > tempHeaterOff_F && powertailState) { // if the coop is too hot and the heater is on, turn it off
     setPowertail(LOW);
     heaterChange = CHANGED_OFF;
     Serial.println("Turning heater off...");

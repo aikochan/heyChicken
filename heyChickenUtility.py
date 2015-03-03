@@ -12,7 +12,7 @@ import tweepy
 import twitterKeys	# defines CONSUMER_KEY, CONSUMER_SECRET, ACCESS_KEY, and ACCESS_SECRET
 
 # "constants"
-ARDUINO_IPADDRESS = "10.0.1.6"
+ARDUINO_IPADDRESS = "10.0.1.11"
 UDP_PORT = 9999
 UDP_PACKET_SIZE = 48
 
@@ -30,10 +30,11 @@ SHUTDOWN_PLEASE = 'Z'
 
 # timing
 UDP_MSG_TIMEOUT_SEC = 60
-STATUS_POLLING_INTERVAL = 300.0		# 5 minutes
+STATUS_POLLING_INTERVAL = 180.0		# 3 minutes
 STATUS_RETRIES = 3
 TUNING_RETRIES = 3
 RETRY_DELAY_SEC = 30
+MAX_UDP_FAILURES = 5
 
 # tuning
 tuning_parameters = None
@@ -54,6 +55,13 @@ DAY_NIGHT = 5
 ROOST_STATUS = 6
 TIMESTAMP = 7
 
+# messages
+ARDUINO_DOWN_MSG = "Better check my coop. Something's up with the electronics."
+HEATER_ON_MSG = "Turning on the heat. My comb's getting frosty."
+HEATER_OFF_MSG = "We are all toasty in here. Cut the heat please."
+SUNS_UP_MSG = "Rise and shine! Time to get up."
+NIGHT_MSG = "Goodnight! Time to hit the sack, er, roost bar."
+
 # globals
 timer = None
 lets_shutdown = False
@@ -62,6 +70,7 @@ status_lock = None
 data_gathering = True
 tweeting = False
 tweepy_api = None
+udp_failures = 0
 
 def signal_handler(signal, frame):
 	print "\n******** Received SIGINT *************"
@@ -75,7 +84,7 @@ def log_error(msg):
 		fileHandle.close()
 		# print "\n{}".format(msg)
 
-def send_user_msg(msg):
+def send_notification(msg):
 	global tweepy_api
 	if tweepy_api is  None:
 		auth = tweepy.OAuthHandler(twitterKeys.CONSUMER_KEY, twitterKeys.CONSUMER_SECRET)
@@ -86,10 +95,16 @@ def send_user_msg(msg):
 # returns true on success, otherwise false		
 def send_datagram(msg, client_socket):
 	success = True
-	bytes_sent = client_socket.sendto(msg, (ARDUINO_IPADDRESS, UDP_PORT))
-	if bytes_sent < len(msg):
-		log_error("UDP sendto failed in send_datagram, bytes_sent: {}".format(bytes_sent))
+	bytes_sent = 0
+	try:
+		bytes_sent = client_socket.sendto(msg, (ARDUINO_IPADDRESS, UDP_PORT))
+	except socket.error, err:
+		log_error("UDP sendto failed in send_datagram, I/O error({})".format(err))
 		success = False	
+	else:
+		if bytes_sent < len(msg):
+			log_error("UDP sendto failed in send_datagram, bytes_sent: {}".format(bytes_sent))
+			success = False	
 	return success
 
 # returns reply on success, None on failure
@@ -97,10 +112,9 @@ def receive_datagram(client_socket):
 	reply = None
 	try:
 		reply, server_address_info = client_socket.recvfrom(UDP_PACKET_SIZE)
-	except socket.timeout:
+	except socket.error, err:
+		log_error("UDP recvfrom failed in receive_datagram, I/O error({})".format(err))
 		reply = None		# redundant just in case
-	if reply is None:
-		log_error("UDP recvfrom failed in receive_datagram")
 	return reply
 	
 def send_message(msg, client_socket, retries):
@@ -120,13 +134,35 @@ def send_message(msg, client_socket, retries):
 			retries -= 1
 	if reply is None:
 		log_error("send_message failed after retries!")
-	return reply		 
+		udp_failures += 1
+		if udp_failures > MAX_UDP_FAILURES:
+			send_notification(ARDUINO_DOWN_MSG)
+			udp_failures = 0
+	return reply	
+	
+def checkChange(previousStatus, index, on_msg, off_msg):
+	global status_lock, status_vars
+	notification = None
+	with status_lock:
+		if previousStatus[index] is not status_vars[index]:
+			notification = (on_msg if int(status_vars[index]) else off_msg)
+			if index is HEATER_STATUS:
+				notification = notification + " It's {}° in here.".format(status_vars[TEMP_COOP])
+	if notification is not None:
+		send_notification(notification)
 
 def receive_status(tokens):
 	global status_lock, status_vars
+	notification = None
+	previousStatus = None
 	with status_lock:
+		previousStatus = status_vars
 		status_vars = tokens[1:-1]
 		status_vars.append(time.ctime())
+	# check if notifications needed
+	if previousStatus is not None:
+		checkChange(previousStatus, HEATER_STATUS, HEATER_ON_MSG, HEATER_OFF_MSG)
+		checkChange(previousStatus, DAY_NIGHT, SUNS_UP_MSG, NIGHT_MSG)
 	if data_gathering:
 		fileHandle = open('coopData', 'a')
 		fileHandle.write("{} {}\n".format(int(time.time()), " ".join(tokens[1:-1])))
@@ -238,7 +274,7 @@ if __name__ == "__main__":
 	client_socket = socket.socket(AF_INET, SOCK_DGRAM)
 	client_socket.settimeout(UDP_MSG_TIMEOUT_SEC)
 	
-	#send_user_msg("Testing!")
+	#send_notification("Testing!")
 		
 	# start a timer to begin request status loop
 	if data_gathering:
