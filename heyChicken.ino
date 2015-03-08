@@ -5,6 +5,18 @@
 #include <SPI.h>
 #include <OneWire.h> 
 
+#define DEBUG
+
+#ifdef DEBUG
+ #define DEBUG_PRINT(x)     		Serial.print (x)
+ #define DEBUG_PRINTDEC(x)  		Serial.print (x, DEC)
+ #define DEBUG_PRINTFLOAT(x,y)  Serial.print (x, y)
+ #define DEBUG_PRINTLN(x)   		Serial.println (x)
+#else
+ #define DEBUG_PRINT(x)
+ #define DEBUG_PRINTDEC(x)
+ #define DEBUG_PRINTLN(x) 
+#endif
 
 #if USE_UDP
 // wifi
@@ -68,15 +80,15 @@ boolean findDS18S20Devices(void)
   {
     if (!ds.search(addr[sensor])) 
     {
-      Serial.print("Can't find DS18S20 Device ID: ");
-      Serial.println(sensor);
+      DEBUG_PRINT("Can't find DS18S20 Device ID: ");
+      DEBUG_PRINTLN(sensor);
       success = false;
     } else if (OneWire::crc8(addr[sensor], 7) != addr[sensor][7]) {
-      Serial.println( "CRC is not valid" );
+      DEBUG_PRINTLN( "CRC is not valid" );
       success = false;
     } else if (addr[sensor][0] != 0x28) {
-      Serial.print("Device is not a DS18S20 family device. Device ID: ");
-      Serial.println(sensor);
+      DEBUG_PRINT("Device is not a DS18S20 family device. Device ID: ");
+      DEBUG_PRINTLN(sensor);
       success = false;
     }
     if (!success)
@@ -99,7 +111,7 @@ boolean getTemp(int sensor, float *result)
   
   if (sensor >= MAX_DS1820_SENSORS)
   {
-    Serial.println("Sensor index invalid");
+    DEBUG_PRINTLN("Sensor index invalid");
     success = false;
   } else {
     ds.reset();
@@ -120,9 +132,9 @@ boolean getTemp(int sensor, float *result)
     // CRC check on read data
     if (OneWire::crc8(data, 8) != data[8])
     {
-      Serial.println("Data CRC failed");
-      Serial.println(OneWire::crc8(data, 8));
-      Serial.println(data[8]);
+      DEBUG_PRINTLN("Data CRC failed");
+      DEBUG_PRINTLN(OneWire::crc8(data, 8));
+      DEBUG_PRINTLN(data[8]);
       success = false;
     } else {
       float tempRead = ((data[1] << 8) | data[0]);     //using two's compliment (???)
@@ -140,11 +152,11 @@ CoopChange checkHeater(float coopTemp)
   {
     setPowertail(HIGH);
     heaterChange = CHANGED_ON;
-    Serial.println("Turning heater on...");
+    DEBUG_PRINTLN("Turning heater on...");
   } else if (coopTemp > tempHeaterOff_F && powertailState) { // if the coop is too hot and the heater is on, turn it off
     setPowertail(LOW);
     heaterChange = CHANGED_OFF;
-    Serial.println("Turning heater off...");
+    DEBUG_PRINTLN("Turning heater off...");
   } 
   return heaterChange;
 }
@@ -268,19 +280,19 @@ void doorSetup()
     // this should not happen
     if (BUMPER_TRIGGERED == digitalRead(BUMP_CLOSE_PIN))
     {
-      Serial.println("ERROR: both open and closed bumper are HIGH. Assuming door is open.");
+      DEBUG_PRINTLN("ERROR: both open and closed bumper are HIGH. Assuming door is open.");
     } else {
-      Serial.println("Door is open");
+      DEBUG_PRINTLN("Door is open");
       closeTheDoor();
     }
   } else {    // door is closed as set by default
     if (BUMPER_CLEAR == digitalRead(BUMP_CLOSE_PIN))
     {
-      Serial.println("ERROR: both open and closed bumper are LOW. Closing door.");
+      DEBUG_PRINTLN("ERROR: both open and closed bumper are LOW. Closing door.");
       // shut the door in this case since it is technically a valid state
       closeTheDoor();  // now we are in a known state to begin
     } else {
-      Serial.println("Door is closed");
+      DEBUG_PRINTLN("Door is closed");
     }
   }
 }
@@ -305,7 +317,7 @@ void move(int speed, int direction)
 
 void stopTheDoor()
 {
-  Serial.println("Stopping door");
+  DEBUG_PRINTLN("Stopping door");
   digitalWrite(STBY_PIN, LOW); 
 }
 
@@ -318,14 +330,14 @@ boolean okToCloseDoor(boolean lightChanged, boolean roostChanged)
   if (CHANGED_OFF == lightChanged /* && CHANGED_ON == roostChanged */)
   {
     isOK = true;
-    Serial.println("It is dark outside and the chickies are sleeping.");
+    DEBUG_PRINTLN("It is dark outside and the chickies are sleeping.");
   }
   return isOK;
 }
 
 void closeTheDoor()
 {
-  Serial.println("Closing door...");
+  DEBUG_PRINTLN("Closing door...");
   // door starting to move, all bumpers should be clear
   openBumper = BUMPER_CLEAR;
   closeBumper = BUMPER_CLEAR;
@@ -345,15 +357,15 @@ boolean okToOpenDoor()
   if (light > lightThreshold)
   {
     isOK = true;
-    Serial.print("Looks like the sun is up! Light is ");
-    Serial.println(light);
+    DEBUG_PRINT("Looks like the sun is up! Light is ");
+    DEBUG_PRINTLN(light);
   }
   return isOK;
 }
 
 void openTheDoor()
 {
-  Serial.println("Opening door...");
+  DEBUG_PRINTLN("Opening door...");
   // door starting to move, all bumpers should be clear
   openBumper = BUMPER_CLEAR;
   closeBumper = BUMPER_CLEAR;
@@ -368,14 +380,14 @@ void wifiSetup(void)
 {
   if (WiFi.status() == WL_NO_SHIELD)
   {
-    Serial.println("WiFi shield not present"); 
+    DEBUG_PRINTLN("WiFi shield not present"); 
     while(true);  // don't continue if the shield is not there
   } 
 
   while ( status != WL_CONNECTED) 
   { 
-    Serial.print("Attempting to connect to SSID: ");
-    Serial.println(ssid);
+    DEBUG_PRINT("Attempting to connect to SSID: ");
+    DEBUG_PRINTLN(ssid);
     status = WiFi.begin(ssid, pwd);  // WPA/WPA2 network
     delay(10000);                    // wait 10 seconds for connection
   } 
@@ -390,19 +402,19 @@ void wifiSetup(void)
 void printWifiStatus() 
 {
   // print the SSID of the network you're attached to
-  Serial.print("SSID: ");
-  Serial.println(WiFi.SSID());
+  DEBUG_PRINT("SSID: ");
+  DEBUG_PRINTLN(WiFi.SSID());
 
   // print your WiFi shield's IP address
   IPAddress ip = WiFi.localIP();
-  Serial.print("IP Address: ");
-  Serial.println(ip);
+  DEBUG_PRINT("IP Address: ");
+  DEBUG_PRINTLN(ip);
 
   // print the received signal strength
   long rssi = WiFi.RSSI();
-  Serial.print("signal strength (RSSI):");
-  Serial.print(rssi);
-  Serial.println(" dBm");
+  DEBUG_PRINT("signal strength (RSSI):");
+  DEBUG_PRINTDEC(rssi);
+  DEBUG_PRINTLN(" dBm");
 }
 
 #endif     // USE_UDP
@@ -412,7 +424,7 @@ void printWifiStatus()
 #if USE_UDP
 void udpSetup()
 {
-  Serial.println("\nStarting connection to UDP server...");
+  DEBUG_PRINTLN("\nStarting connection to UDP server...");
   Udp.begin(udpPort);
   
   // send "awake" message to server at startup
@@ -431,16 +443,16 @@ void handleUDP(float tempCoop, float tempRun, int light, int pressure)
   // read packet if present
   if ( Udp.parsePacket() ) 
   {
-    Serial.print("packet received: ");
+    DEBUG_PRINT("packet received: ");
     memset(packetBuffer, 0, UDP_PACKET_SIZE);  // clear packet data
     Udp.read(packetBuffer, UDP_PACKET_SIZE); // read the packet into the buffer
-    Serial.println(packetBuffer);
+    DEBUG_PRINTLN(packetBuffer);
     currentRequest = *packetBuffer;
-    Serial.print("currentRequest: ");
-    Serial.println(currentRequest);
+    DEBUG_PRINT("currentRequest: ");
+    DEBUG_PRINTLN(currentRequest);
     clientAddress = Udp.remoteIP();
-    Serial.print("clientAddress: ");
-    Serial.println(clientAddress);
+    DEBUG_PRINT("clientAddress: ");
+    DEBUG_PRINTLN(clientAddress);
   }
 
   // process packet
@@ -483,13 +495,13 @@ void sendUDPPacket()
 {
 	if (clientAddress)
 	{
-		Serial.print("Sending UDP packet: ");
-		Serial.println(replyBuffer);
+		DEBUG_PRINT("Sending UDP packet: ");
+		DEBUG_PRINTLN(replyBuffer);
 		Udp.beginPacket(Udp.remoteIP(), Udp.remotePort());
 		Udp.write(replyBuffer, UDP_PACKET_SIZE);
 		Udp.endPacket();
   } else {
-  	Serial.println("No client address");
+  	DEBUG_PRINTLN("No client address");
   }
 }
 #endif      // USE_UDP
@@ -518,26 +530,26 @@ void readSensors(float *tempCoop, float *tempRun, int *light, int *pressure)
   getPressure(pressure);
   getLight(light);
   
-  Serial.print("coop: ");
-  Serial.print(*tempCoop, 1);
-  Serial.print("F");
-  Serial.print("\t");
+  DEBUG_PRINT("coop: ");
+  DEBUG_PRINTFLOAT(*tempCoop, 1);
+  DEBUG_PRINT("F");
+  DEBUG_PRINT("\t");
 
-  Serial.print("run: ");
-  Serial.print(*tempRun, 1);
-  Serial.print("F");
-  Serial.print("\t");
+  DEBUG_PRINT("run: ");
+  DEBUG_PRINTFLOAT(*tempRun, 1);
+  DEBUG_PRINT("F");
+  DEBUG_PRINT("\t");
   
-  Serial.print("light: ");
-  Serial.print(*light);
-  Serial.print("\t");
+  DEBUG_PRINT("light: ");
+  DEBUG_PRINTDEC(*light);
+  DEBUG_PRINT("\t");
 
-  Serial.print("pressure: ");
-  Serial.print(*pressure);
-  Serial.print("\t");
+  DEBUG_PRINT("pressure: ");
+  DEBUG_PRINTDEC(*pressure);
+  DEBUG_PRINT("\t");
 
-  Serial.print("heater: ");
-  Serial.println(powertailState);
+  DEBUG_PRINT("heater: ");
+  DEBUG_PRINTLN(powertailState);
 }
 
 void setTunableParameter(int value, TunableParameter type)
@@ -575,7 +587,9 @@ void errorMessage(char *msg)
 
 void setup(void) 
 {
+#ifdef DEBUG
   Serial.begin(9600); 
+#endif
   wifiSetup();
 #if OPERATE_DOOR 
   doorSetup();
@@ -585,7 +599,7 @@ void setup(void)
 
 void loop(void) 
 {
-  //Serial.println("Loop function called");
+  //DEBUG_PRINTLN("Loop function called");
   
   float tempCoop = 0.0;
   float tempRun = 0.0;
@@ -616,7 +630,7 @@ void loop(void)
   lightChanged = checkLightChanged(light);
 
 #if OPERATE_DOOR  
-  Serial.println("We are in the door code");
+  DEBUG_PRINTLN("We are in the door code");
   switch (doorState)
   {
     // DOOR_OPENING/DOOR_CLOSING: door is moving, need to poll frequently for bumper
