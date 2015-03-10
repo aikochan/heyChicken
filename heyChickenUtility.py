@@ -70,7 +70,7 @@ lets_shutdown = False
 udp_lock = None
 status_lock = None
 data_gathering = True
-tweeting = False
+tweeting = True
 tweepy_api = None
 udp_failures = 0
 
@@ -120,7 +120,7 @@ def receive_datagram(client_socket):
 	return reply
 	
 def send_message(msg, client_socket, retries):
-	global udp_lock
+	global udp_lock, udp_failures
 	reply = None
 	send_result = False
 	with udp_lock:
