@@ -67,7 +67,7 @@ enum MsgType {
 #define MOTOR_OPEN_DOOR   1
 
 // loop intervals
-#define DOOR_IDLE_DELAY_MS        1000
+#define DOOR_IDLE_DELAY_MS        5000
 #define DOOR_MOVING_DELAY_MS      250
 #define PERIODIC_TASKS_FREQ       5      // multiples of DOOR_IDLE_DELAY_MS
 #define IDLE_DELAY                5000

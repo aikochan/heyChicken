@@ -5,7 +5,7 @@
 #include <SPI.h>
 #include <OneWire.h> 
 
-#define DEBUG
+//#define DEBUG
 
 #ifdef DEBUG
  #define DEBUG_PRINT(x)     		Serial.print (x)
@@ -15,6 +15,7 @@
 #else
  #define DEBUG_PRINT(x)
  #define DEBUG_PRINTDEC(x)
+ #define DEBUG_PRINTFLOAT(x,y)
  #define DEBUG_PRINTLN(x) 
 #endif
 
@@ -347,18 +348,14 @@ void closeTheDoor()
 
 // It is ok to open if it is light outside.
 // We don't care about the roost situation. 
-boolean okToOpenDoor()
+boolean okToOpenDoor(boolean lightChanged)
 {
   boolean isOK = false;
-  int light = 0;
-  
-  getLight(&light);
-  
-  if (light > lightThreshold)
+    
+  if (CHANGED_ON == lightChanged)
   {
     isOK = true;
-    DEBUG_PRINT("Looks like the sun is up! Light is ");
-    DEBUG_PRINTLN(light);
+    DEBUG_PRINTLN("Looks like the sun is up!");
   }
   return isOK;
 }
@@ -591,9 +588,7 @@ void setup(void)
   Serial.begin(9600); 
 #endif
   wifiSetup();
-#if OPERATE_DOOR 
   doorSetup();
-#endif
   powertailSetup(); 
 }
 
@@ -607,7 +602,7 @@ void loop(void)
   int pressure = 0;
   int originalPowertailState = powertailState;
   CoopChange movement = NO_CHANGE;  
-  CoopChange heaterChanged = NO_CHANGE;	// not doing anything with the changed variables yet
+  CoopChange heaterChanged = NO_CHANGE;
   CoopChange roostChanged = NO_CHANGE;
   CoopChange lightChanged = NO_CHANGE;
   
@@ -624,13 +619,6 @@ void loop(void)
     }
   }
   
-  readSensors(&tempCoop, &tempRun, &light, &pressure);
-  heaterChanged = checkHeater(tempCoop);		// This will turn the heater on/off
-  roostChanged = checkChickensOnRoost(pressure);
-  lightChanged = checkLightChanged(light);
-
-#if OPERATE_DOOR  
-  DEBUG_PRINTLN("We are in the door code");
   switch (doorState)
   {
     // DOOR_OPENING/DOOR_CLOSING: door is moving, need to poll frequently for bumper
@@ -661,33 +649,45 @@ void loop(void)
      
      //  DOOR_OPEN/DOOR_CLOSED: Idle state, poll less frequently and take care of periodic tasks
     case DOOR_OPEN:
+		//performDoorIdleTasks();
+			readSensors(&tempCoop, &tempRun, &light, &pressure);
+			heaterChanged = checkHeater(tempCoop);		// This will turn the heater on/off
+			roostChanged = checkChickensOnRoost(pressure);
+			lightChanged = checkLightChanged(light);
+			
+			#if USE_UDP
+  			handleUDP(tempCoop, tempRun, light, pressure);
+			#endif
+				
       // do we need to close the door?
       if (okToCloseDoor(lightChanged, roostChanged))
       {
         closeTheDoor();
       } else {
-        performDoorIdleTasks();
         delay(DOOR_IDLE_DELAY_MS); 
       }
       break;
       
     case DOOR_CLOSED:
+    	//performDoorIdleTasks();
+			readSensors(&tempCoop, &tempRun, &light, &pressure);
+			heaterChanged = checkHeater(tempCoop);		// This will turn the heater on/off
+			roostChanged = checkChickensOnRoost(pressure);
+			lightChanged = checkLightChanged(light);
+			
+			#if USE_UDP
+  			handleUDP(tempCoop, tempRun, light, pressure);
+			#endif
+				
       // do we need to open the door?
       if (okToOpenDoor(lightChanged))
       {
         openTheDoor();
       } else {
-        performDoorIdleTasks();
         delay(DOOR_IDLE_DELAY_MS); 
       }
       break;
   }
-#endif    // OPERATE_DOOR
-#if USE_UDP
-  handleUDP(tempCoop, tempRun, light, pressure);
-#endif
-#if !OPERATE_DOOR
-  delay(IDLE_DELAY);
-#endif
+  //delay(IDLE_DELAY);
 }
 

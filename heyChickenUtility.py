@@ -59,8 +59,10 @@ TIMESTAMP = 7
 ARDUINO_DOWN_MSG = "Better check my coop. Something's up with the electronics."
 HEATER_ON_MSG = "Turning on the heat. My comb's getting frosty."
 HEATER_OFF_MSG = "We are all toasty in here. Cut the heat please."
-SUNS_UP_MSG = "Rise and shine! Time to get up."
-NIGHT_MSG = "Goodnight! Time to hit the sack, er, roost bar."
+SUNS_UP_MSG = "Horray!! The coop door is open. I'm out of here."
+SLEEPING_MSG = "Goodnight! Time to hit the sack, er, roost bar."
+DOOR_CLOSED_MSG = "The coop door is closed. Chickies are safe and sound."
+OFFROOST_MSG = "Rise and shine world! I'm awake."
 
 # globals
 timer = None
@@ -146,8 +148,14 @@ def checkChange(previousStatus, index, on_msg, off_msg):
 	with status_lock:
 		if previousStatus[index] is not status_vars[index]:
 			notification = (on_msg if int(status_vars[index]) else off_msg)
+			appendMsg = ""
 			if index is HEATER_STATUS:
-				notification = notification + " It's {}° in here.".format(status_vars[TEMP_COOP])
+				appendMsg = " It's {}° in here.".format(status_vars[TEMP_COOP])
+			if index is DAY_NIGHT:
+				appendMsg = " It's {}°.".format(status_vars[TEMP_RUN])
+			if index is ROOST_STATUS and not int(status_vars[ROOST_STATUS]) and not int(status_vars[DAY_NIGHT]):
+				appendMsg = " Let me out, I'm hungry."
+			notification = notification + appendMsg	
 	if notification is not None:
 		send_notification(notification)
 
@@ -162,7 +170,8 @@ def receive_status(tokens):
 	# check if notifications needed
 	if previousStatus is not None:
 		checkChange(previousStatus, HEATER_STATUS, HEATER_ON_MSG, HEATER_OFF_MSG)
-		checkChange(previousStatus, DAY_NIGHT, SUNS_UP_MSG, NIGHT_MSG)
+		checkChange(previousStatus, DAY_NIGHT, SUNS_UP_MSG, DOOR_CLOSED_MSG)
+		checkChange(previousStatus, ROOST_STATUS, SLEEPING_MSG, OFFROOST_MSG)
 	if data_gathering:
 		fileHandle = open('coopData', 'a')
 		fileHandle.write("{} {}\n".format(int(time.time()), " ".join(tokens[1:-1])))
